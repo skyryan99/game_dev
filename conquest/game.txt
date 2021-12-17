@@ -1,0 +1,166 @@
+Premise:
+    Player commands a squad of void knights.
+    Each player gets the same amount of resources to build a squad with
+        1000 points for units or commands
+        Max 10 units
+        Max 4 commands
+    Players choose troops and starting formation
+    Anywhere within the first three rows on your side
+    Different units have different:
+        Damage
+        Health
+        Range
+        Movement Rates
+    Games have a turn duration between 30 seconds and 3 minutes (can be set)
+
+Gameplay:
+    Pregame:
+        Troop and command selection
+    Board:
+        20x20 grid
+        Randomly generated obstacles each game
+            1x1 pile of boxes
+            1x3 and 1x4 horizontal or vertical wood barrier
+    Player Turns:
+        Move and attack with a single troop
+        Commands can be issued during any phase
+        Selection Phase:
+            Pick the troop to move
+            Player confirms with "select troop"
+        Movement Phase:
+            Pick a square to move, up to unit's move point cap
+        Combat Phase:
+            Attack an opponent's troop if in range if desired
+            Opposing troop retaliates if able
+        Rally Phase:
+            An additional chance to issue commands before ending the turn
+
+UI components:
+    Pregame troop and command selector with rules for not exceeding points max
+        Can fill 10 troop slots, empty ones say "no troop selected"
+        Can fill 4 command slots
+        can remove a troop or command by clicking it and selecting "remove"
+    Side Menu with several components:
+        Details menu option for any selected unit
+            Includes stats on unit current and max
+            Name of any effects + summary of effects from commands
+        "Select Unit" Option
+        End turn and next phase options
+        Resign game option
+        Any game settings
+
+    Selection Phase:
+        A display comes up when a troop is clicked that shows range of
+            movement and possible attack targets
+
+Units:
+    Scout:
+        Movement 6
+        Damage 100
+        Health 100
+        Range 1
+        Cost 25
+    Foot Soldier:
+        Movement 4
+        Damage 100
+        Health 300
+        Range 1
+        Cost 50
+    Halberdier:
+        Movement 4
+        Damage 200
+        Health 200
+        Range 2
+        Cost 75
+    Archer:
+        Movement 3
+        Damage 100
+        Health 100
+        Range 6
+        Cost 100
+    Mage:
+        Movement 4
+        Damage 200
+        Health 100
+        Range 4
+        Cost 100
+    Knight:
+        Movement 4
+        Damage 300
+        Health 300
+        Range 1
+        Cost 100
+    Champion:
+        Movement 4
+        Damage 400
+        Health 500
+        Range 1
+        Cost 200
+
+Commands:
+    Can choose up to 4 commands
+    Each command can be used multiple times
+        Must be off cooldown
+        Must have enough command points
+    Gain 25 command points every turn, and points equal to the cost of killed enemies
+
+    Battle Cry:
+        Cooldown 5 turns
+        Cost 75
+            A target troop you control gains +200 damage and
+            +200 health until the start of your next turn. One
+            of the most common commands chosen, it is often
+            paired with Charge.
+    Bombard:
+        Cooldown 2 turns
+        Cost 200
+            A target enemy troop's health is reduced by 100.
+            Troops defeated do not grant Command points.
+    Charge:
+        Cooldown 5 turns
+        Cost 75
+         	A target troop you control has its movement attribute
+         	doubled for this turn. Often paired with Battle Cry,
+         	or to give a Scout the range to quickly take out an
+         	Archer or Mage.
+    Chastise:
+        Cooldown 3 turns
+        Cost 50
+         	A target enemy troop cannot move or attack during
+         	your opponent's next turn. Cannot be used on an
+         	opponent's last remaining troop. Chastise does not
+         	prevent units from auto-retaliating if attacked
+         	during your own turn. It is a common choice for a
+         	command, useful for preventing the enemy from
+         	targeting a vulnerable unit, or holding a buffed
+         	enemy unit in place until the effect wears off.
+    Regenerate:
+        Cooldown 4 turns
+        Cost 150
+            A target troop you control has its health completely
+            restored. While an expensive choice, it can be useful
+            for Champion-heavy strategies.
+    Shield Wall:
+        Cooldown 5 turns
+        Cost 50
+            All damage dealt to target troop you control is
+            reduced to 100 until the start of your next turn.
+    Stoicism:
+        Cooldown 5 turns
+        Cost 75
+            A target troop you control gains +400 health
+            until the start of your next turn.
+    Vigilance:
+        Cooldown 3 turns
+        Cost 50
+            A target troop you control strikes first when
+            defending until the start of your next turn.
+    Winds of Fate:
+        Cooldown 2 turns
+        Cost 150
+            A command, at random, reaches the end of its
+            cool-down period and is ready to use.
+
+TODO:
+- Perhaps put constraints on the adjacency of obstacles, so they never appear side by side
+- Perhaps make random generations symmetrical
