@@ -1,1 +1,1 @@
-yoo
+this is my attempt at recreating the game "Conquest", which was a members-only mini game in runescape 2007. Full disclaimer: I have never played conquest before. It is a two-player (though it could support more), turn-based strategy game with gameplay similar to chess.
