@@ -5,6 +5,7 @@ import os
 import ctypes
 
 import actions
+import menus
 import render
 import gameboard
 
