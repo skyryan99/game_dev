@@ -77,7 +77,7 @@ def create_board(screen):
 
 
 def saturate_anchor(anchor, screen, scale_idx, scales):
-    buffer = 50*scales[scale_idx]
+    buffer = 100*scales[scale_idx]
     if scale_idx == 0:
         return 0, 0
     if anchor[0] > buffer:
