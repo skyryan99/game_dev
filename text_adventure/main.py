@@ -23,8 +23,8 @@ clock = pygame.time.Clock()
 index = 0
 scene_changed = True
 current_scene = "INIT"
-player_choice = 0
-
+player_choice = None
+buttons = []
 is_running = True
 pygame.init()
 
@@ -35,13 +35,35 @@ while is_running:
             is_running = False
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                print("Button Created")
-                button_rect, border_rect, text = clickables.create_button(screen, "Test Button", index, 'ExtraBold')
-                index += 1
+                print("Escaped")
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            pressed = pygame.mouse.get_pressed(num_buttons=3)
+            if pressed[0]:  # Left Click
+                mx, my = pygame.mouse.get_pos()
+                for button in buttons:
+                    if button[1].collidepoint(mx, my):
+                        player_choice = button[13]
+                        scene_changed = True
 
+    # Change the scene when a player picks a course of action
     if scene_changed:
+        scene_changed = False
+        player_choice = None
         current_scene = story_logic.get_scene(current_scene, player_choice)
-        story_logic.draw_scene(screen, current_scene)
+        buttons = story_logic.draw_scene(screen, current_scene)
+
+    # Check hover for each button
+    mx, my = pygame.mouse.get_pos()
+    for button in buttons:
+        if button[1].collidepoint(mx, my):  # Highlight color
+            pygame.draw.rect(screen, button[8], button[1], width=button[3], border_radius=button[4])
+            new_text_color = button[10].render(button[11], True, button[8], button[12])
+            screen.blit(new_text_color, (button[0][0] + button[9], button[0][1] + button[9]))
+        else:  # Regular color
+            pygame.draw.rect(screen, button[5], button[1], width=button[3], border_radius=button[4])
+            screen.blit(button[2], (button[0][0] + button[9], button[0][1] + button[9]))
+        pygame.display.update(button[1])
+
 
 pygame.quit()
 sys.exit(0)
