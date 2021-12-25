@@ -22,8 +22,9 @@ clock = pygame.time.Clock()
 # For testing
 index = 0
 scene_changed = True
-current_scene = "INIT"
-player_choice = None
+current_scene = story_logic.Init()
+story_logic.init_all_scenes()
+player_choice = 0
 buttons = []
 is_running = True
 pygame.init()
@@ -42,13 +43,13 @@ while is_running:
                 mx, my = pygame.mouse.get_pos()
                 for button in buttons:
                     if button[1].collidepoint(mx, my):
-                        player_choice = button[13]
+                        player_choice = 3 - button[13]
                         scene_changed = True
 
     # Change the scene when a player picks a course of action
     if scene_changed:
         scene_changed = False
-        player_choice = None
+        print(player_choice)
         current_scene = story_logic.get_scene(current_scene, player_choice)
         buttons = story_logic.draw_scene(screen, current_scene)
 
