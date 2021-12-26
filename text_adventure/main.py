@@ -14,7 +14,7 @@ pygame.display.set_caption('Plant Adventure')
 icon = pygame.image.load(os.getcwd() + '/images/leaf_icon2.png')
 pygame.display.set_icon(icon)
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("PLS")
-screen = pygame.display.set_mode((1280, 720))
+screen = pygame.display.set_mode((1280, 900))
 # Background fill
 screen.fill(pygame.Color(71, 71, 71))
 # Set upper fps limit

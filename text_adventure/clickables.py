@@ -20,13 +20,13 @@ def create_button(screen, text, row_num, font_type, italic=False):
     """
 
     padding = 15  # pixels of padding around each button
-    button_section_height = screen.get_height() * 0.6
+    button_section_height = screen.get_height() * 0.68
     button_fill_color = (0, 0, 0)  # Black
     button_border_color = (255, 255, 255)  # White
     text_color = (255, 255, 255)  # White
     button_border_width = 3
     corner_radius = 5
-    text_size = 18
+    text_size = 22
     highlight_color = (252, 239, 164)  # Offwhite
 
     if font_type == 'Regular' and italic:  # Just to get around a particular naming convention in fonts folder

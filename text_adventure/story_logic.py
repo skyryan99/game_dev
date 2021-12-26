@@ -6,18 +6,22 @@ import clickables
 How to arrive at each one, etc. """
 
 all_scenes = {"INIT": None,
-              "STARTVILLAGE": None,
-              "GIANTENCOUNTER": None,
-              "ISOLATEDCASTLE": None
+              "WALKINGTOOFFICE1": None,
+              "PIOFFICE1": None,
+              "PIOFFICE2": None,
+              "PIOFFICE3A": None,
+              "PIOFFICE3B": None
               }
 
 
 def init_all_scenes():
     global all_scenes
     all_scenes["INIT"] = Init()
-    all_scenes["STARTVILLAGE"] = StartVillage()
-    all_scenes["GIANTENCOUNTER"] = GiantEncounter()
-    all_scenes["ISOLATEDCASTLE"] = IsolatedCastle()
+    all_scenes["WALKINGTOOFFICE1"] = WalkingToOffice1()
+    all_scenes["PIOFFICE1"] = PIOffice1()
+    all_scenes["PIOFFICE2"] = PIOffice2()
+    all_scenes["PIOFFICE3A"] = PIOffice3a()
+    all_scenes["PIOFFICE3B"] = PIOffice3b()
 
 
 def get_scene(current_scene, player_choice):
@@ -26,8 +30,8 @@ def get_scene(current_scene, player_choice):
 
 
 def draw_scene(screen, scene):
-    padding = 15
-    text_size = 28
+    padding = 12
+    text_size = 30
     text_body_color = (255, 255, 255)
     text_outline_color = (0, 0, 0)
     text_border_thickness = 2  # Looks weird if higher than 3. Must be greater than 0
@@ -81,43 +85,78 @@ class Init():
     kind = "setup"
 
     def __init__(self):
-        self.options = [("Game Loading...", "ExtraLight", True, "STARTVILLAGE")]
+        self.options = [("Game Loading...", "ExtraLight", True, "WALKINGTOOFFICE1")]
 
 
-class GiantEncounter:
+class WalkingToOffice1:
     kind = "scene"
 
     def __init__(self):
-        self.background = pygame.image.load(os.getcwd() + '/images/giant_encounter.jpg')
-        self.text_body = "As you walk through the forest glade, the stirring of birds and pounding of hooves grabs " \
-            + "your attention. You see a deer running for its life in front of you and behind it a mountain giant."
+        self.scene_num = 0
+        self.background = pygame.image.load(os.getcwd() + '/images/walking_to_office_with_alcohol.webp')
+        self.text_body = "I throw my shoulder into the old oak door of my house, dusting my trench coat with curls " \
+            + "aged varnish. Trudging down the hallway, I balance my shopping bag full of booze while kicking the " \
+            + "door closed and getting my keys out of my pocket in a way only a veteran alcohol-enthusiast can " \
+            + "master. Finally, I reach my door and jostle my way in, only barely bumping my head on the cramped " \
+            + "ceiling."
         # Form [(Text, Font_Type, Italic), ...]
-        self.options = [("Back away slowly and as quietly as possible...", "ExtraLight", True, "INIT"),
-                        ("Crouch down behind a tree trunk and watch the giant.", "Regular", False, "INIT"),
-                        ("Shout at it to get its attention!", "ExtraBold", False, "INIT"),
-                        ("Run away as fast as you can.", "Regular", True, "INIT")]
+        self.options = [("Next", "SemiBold", False, "PIOFFICE1")]
 
 
-class IsolatedCastle:
+class PIOffice1:
     kind = "scene"
 
     def __init__(self):
-        self.background = pygame.image.load(os.getcwd() + '/images/isolated_castle.jpg')
-        self.text_body = "You meander through the village and come out the other side to a vast plain. Sitting in the" \
-            + " middle of it is an isolated castle. You are unsure if it is currently occupied."
+        self.scene_num = 1
+        self.background = pygame.image.load(os.getcwd() + '/images/pi_office_coming_back_with_alcohol.webp')
+        self.text_body = " Did I say my house? It’s basically my house, but due to a technicality I actually only " \
+            + "rent a so-called “coffin” apartment in a closet below the stairs of my uncle’s house. He’s not " \
+            + "particularly fond of me, but I guess my \"hangdog, private eye down on his luck\" face garnered some " \
+            + "scraps of sympathy."
         # Form [(Text, Font_Type, Italic, NextScene), ...]
-        self.options = [("Continue walking through the plain towards the castle.", "Regular", False, "INIT"),
-                        ("Turn back towards the village.", "Regular", False, "INIT"),
-                        ("Shout obscenities into the open field.", "ExtraBold", False, "INIT")]
+        self.options = [("Next", "SemiBold", False, "PIOFFICE2")]
 
 
-class StartVillage:
+class PIOffice2:
     kind = "scene"
 
     def __init__(self):
-        self.background = pygame.image.load(os.getcwd() + '/images/start_village.jpg')
-        self.text_body = "Welcome traveler! Before you lies the village of Thrombovor! Where will your jourmney" \
-            + " take you?"
+        self.scene_num = 2
+        self.background = pygame.image.load(os.getcwd() + '/images/pi_office_coming_back_with_alcohol.webp')
+        self.text_body = "Anyways, for now this is only a temporary pitstop on my personal road to greatness. I’m " \
+            + "sure one day pilgrims will come to this tiny musty pit of a room and bestow flower garlands on my " \
+            + "combination fridge/microwave/hotpot."
         # Form [(Text, Font_Type, Italic, NextScene), ...]
-        self.options = [("Go check out the castle.", "Regular", False, "ISOLATEDCASTLE"),
-                        ("Go into the forest.", "Regular", False, "GIANTENCOUNTER")]
+        self.options = [("Priorities (alcohol).", "SemiBold", False, "PIOFFICE3A"),
+                        ("God please save me from this ceaseless mediocrity.", "SemiBold", False, "PIOFFICE3B")]
+
+
+class PIOffice3a:
+    kind = "scene"
+
+    def __init__(self):
+        self.scene_num = 3
+        self.background = pygame.image.load(os.getcwd() + '/images/pi_office_alcohol_on_bed.jpg')
+        self.text_body = " I stash my newly-gained bottles in said unholy kitchen-appliance abomination and flop " \
+            + "my threadbare mattress. I pull out my phone and begin lazily searching for any social opportunities " \
+            + "that could let me drink for free with people I barely know. What’s this? A client emailed me? I " \
+            + "jackknife up in bed, stunned by the good fortune."
+
+        # Form [(Text, Font_Type, Italic, NextScene), ...]
+        self.options = [("CLOSE DEMO", "SemiBold", False, "INIT")]
+
+
+class PIOffice3b:
+    kind = "scene"
+
+    def __init__(self):
+        self.scene_num = 3
+        self.background = pygame.image.load(os.getcwd() + '/images/pi_office_opening_laptop.jpg')
+        self.text_body = "Filled with an extremely unusual bout of fiery motivation, I strode purposefully to my " \
+            + "ancient laptop. Opening my email, I scour my inbox for any crumbs of opportunity, completely focused " \
+            + "on the task at hand. Hold on. I press my left hand to my gut and investigate. Last time I felt any " \
+            + "source of internal ambition this strong it turned out to be appendicitis and they had to sedate me " \
+            + "the hospital. Out of the corner of my eye I see it. A client’s email!"
+
+        # Form [(Text, Font_Type, Italic, NextScene), ...]
+        self.options = [("CLOSE DEMO", "Regular", False, "INIT")]
