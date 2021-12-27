@@ -2,16 +2,11 @@
 import os
 import pygame
 import clickables
+from collections import defaultdict
 """Basically just a huge graph of different scenes and how they are connected.
 How to arrive at each one, etc. """
 
-all_scenes = {"INIT": None,
-              "WALKINGTOOFFICE1": None,
-              "PIOFFICE1": None,
-              "PIOFFICE2": None,
-              "PIOFFICE3A": None,
-              "PIOFFICE3B": None
-              }
+all_scenes = defaultdict()
 
 
 def init_all_scenes():
@@ -19,7 +14,8 @@ def init_all_scenes():
     all_scenes["INIT"] = Init()
     all_scenes["WALKINGTOOFFICE1"] = WalkingToOffice1()
     all_scenes["PIOFFICE1"] = PIOffice1()
-    all_scenes["PIOFFICE2"] = PIOffice2()
+    all_scenes["PIOFFICE2A"] = PIOffice2a()
+    all_scenes["PIOFFICE2B"] = PIOffice2b()
     all_scenes["PIOFFICE3A"] = PIOffice3a()
     all_scenes["PIOFFICE3B"] = PIOffice3b()
 
@@ -81,11 +77,11 @@ def draw_scene(screen, scene):
     return buttons
 
 
-class Init():
+class Init:
     kind = "setup"
 
     def __init__(self):
-        self.options = [("Game Loading...", "ExtraLight", True, "WALKINGTOOFFICE1")]
+        self.options = [("Enter", "SemiBold", False, "WALKINGTOOFFICE1")]
 
 
 class WalkingToOffice1:
@@ -114,10 +110,10 @@ class PIOffice1:
             + "particularly fond of me, but I guess my \"hangdog, private eye down on his luck\" face garnered some " \
             + "scraps of sympathy."
         # Form [(Text, Font_Type, Italic, NextScene), ...]
-        self.options = [("Next", "SemiBold", False, "PIOFFICE2")]
+        self.options = [("Next", "SemiBold", False, "PIOFFICE2A")]
 
 
-class PIOffice2:
+class PIOffice2a:
     kind = "scene"
 
     def __init__(self):
@@ -128,7 +124,8 @@ class PIOffice2:
             + "combination fridge/microwave/hotpot."
         # Form [(Text, Font_Type, Italic, NextScene), ...]
         self.options = [("Priorities (alcohol).", "SemiBold", False, "PIOFFICE3A"),
-                        ("God please save me from this ceaseless mediocrity.", "SemiBold", False, "PIOFFICE3B")]
+                        ("God please save me from this ceaseless mediocrity.", "SemiBold", False, "PIOFFICE3B"),
+                        ("Start drinking.", "SemiBold", False, "PIOFFICE2B")]
 
 
 class PIOffice3a:
@@ -137,7 +134,7 @@ class PIOffice3a:
     def __init__(self):
         self.scene_num = 3
         self.background = pygame.image.load(os.getcwd() + '/images/pi_office_alcohol_on_bed.jpg')
-        self.text_body = " I stash my newly-gained bottles in said unholy kitchen-appliance abomination and flop " \
+        self.text_body = "I stash my newly-gained bottles in said unholy kitchen-appliance abomination and flop " \
             + "my threadbare mattress. I pull out my phone and begin lazily searching for any social opportunities " \
             + "that could let me drink for free with people I barely know. What’s this? A client emailed me? I " \
             + "jackknife up in bed, stunned by the good fortune."
@@ -160,3 +157,14 @@ class PIOffice3b:
 
         # Form [(Text, Font_Type, Italic, NextScene), ...]
         self.options = [("CLOSE DEMO", "Regular", False, "INIT")]
+
+
+class PIOffice2b:
+    kind = "scene"
+
+    def __init__(self):
+        self.scene_num = 2
+        self.background = pygame.image.load(os.getcwd() + '/images/pi_office_coming_back_with_alcohol.webp')
+        self.text_body = "Man that was good shit."
+        # Form [(Text, Font_Type, Italic, NextScene), ...]
+        self.options = [("God please save me from this ceaseless mediocrity.", "SemiBold", False, "PIOFFICE3B")]
