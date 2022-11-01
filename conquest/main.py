@@ -25,8 +25,8 @@ pygame.display.init()
 pygame.font.init()
 
 """Set-up Code"""
-screen_width = 1280  # 1280
-screen_height = 720  # 720
+screen_width = 1920  # 1280
+screen_height = 1080  # 720
 default_screen_size = (screen_width, screen_height)
 pygame.display.set_caption('Conquest')
 icon = pygame.image.load(os.getcwd() + '/images/conquest_icon.png')
@@ -41,7 +41,7 @@ board, cell_size = gameboard.create_board(fake_screen)
 scale_idx = 0
 scales = [1, 2, 4]
 anchor = (0, 0)
-state = "GAME"
+state = "START"
 # Small, Medium, and Large font sizes
 fonts = [pygame.font.Font(font, 12), pygame.font.Font(font, 20), pygame.font.Font(font, 32),
          pygame.font.Font(font, 52), pygame.font.Font(font, 72)]
@@ -100,12 +100,12 @@ while True:
                 if event.y == 1 and scale_idx < 2:
                     old_rect = board.get_rect()
                     board = pygame.transform.scale(board, (old_rect[2]*2, old_rect[3]*2))
-                    anchor = (anchor[0]*2 - mx, anchor[1]*2 - my)
+                    anchor = (anchor[0]*2 - (mx/window_size_ratio), anchor[1]*2 - (my/window_size_ratio))
                     scale_idx += 1
                 elif event.y == -1 and scale_idx > 0:
                     old_rect = board.get_rect()
                     board = pygame.transform.scale(board, (old_rect[2]*0.5, old_rect[3]*0.5))
-                    anchor = (anchor[0]*0.5 + mx*0.5, anchor[1]*0.5 + my*0.5)
+                    anchor = (anchor[0]*0.5 + (mx*0.5/window_size_ratio), anchor[1]*0.5 + (my*0.5/window_size_ratio))
                     scale_idx -= 1
         # Grab exit X events
         elif event.type == pygame.QUIT:

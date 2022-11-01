@@ -7,7 +7,6 @@ resource_val = 1000
 selected_troops = []
 selected_commands = []
 
-
 class Button:
     def __init__(self, row, col, width, height, spacing, entity_type):
         border_width = 2
@@ -19,7 +18,8 @@ class Button:
         self.entity = entity_type
         self.img_top_left = (outer_x + 3*border_width, outer_y + 3*border_width)
         self.name_top_left = (outer_x + 3*border_width + 32*5, outer_y + 3*border_width)
-        self.cost_top_left = (outer_x + 3*border_width, outer_y + 4*border_width + 32*4)
+        self.cost_top_left = (outer_x + 3*border_width, outer_y + 32*3)
+        self.cooldown_top_left = (outer_x + 3*border_width, outer_y + 32*4)
         self.stats_top_left = (outer_x + 3*border_width + 32*5, outer_y + 4*border_width + 32*2)
 
 
@@ -38,6 +38,9 @@ def troops_menu(screen, fonts, real_screen):
     between = 50
     x_rat = screen.get_width() / real_screen.get_width()
     y_rat = screen.get_height() / real_screen.get_height()
+
+    if len(selected_commands) == 4 and (len(selected_troops) == 10 or resource_val == 0):
+        ready_flag = 1
 
     # Render the font surfaces and get their rectangles
     troops = fonts[3].render("Select Troops", 1, light_brown, main_tab_color)
@@ -151,7 +154,7 @@ def troops_menu(screen, fonts, real_screen):
         stats = [movement, damage, health, atk_range]
 
         screen.blit(name, button.name_top_left)
-        screen.blit(cost, button.cost_top_left)
+        screen.blit(cost, (button.cooldown_top_left[0], button.cooldown_top_left[1] + 20))
         for j, stat in enumerate(stats):
             screen.blit(stat, (button.stats_top_left[0], button.stats_top_left[1] + j*stats_size[1]))
         # Draw the stuff inside the button
@@ -198,6 +201,22 @@ def troops_menu(screen, fonts, real_screen):
                         baseline + selected_troops_bar_inner[1] + 50))
         screen.blit(image, (selected_troops_bar_inner[0] + 25, baseline + selected_troops_bar_inner[1] + 15))
 
+    # see if the player has finished their loadout
+    if len(selected_commands) == 4 and (len(selected_troops) == 10 or resource_val == 0):
+        # make the ready button
+        ready_rect = pygame.Rect(1500, 25, fonts[2].size("READY UP!")[0], 40)
+        mouse_pos = pygame.mouse.get_pos()
+        scaled_pos = (mouse_pos[0] * x_rat, mouse_pos[1] * y_rat)
+        if ready_rect.collidepoint(scaled_pos):
+            # if it gets clicked, move to the game
+            if pygame.mouse.get_pressed(num_buttons=5)[0]:
+                state = "GAME"
+            ready_text = fonts[2].render("READY UP!", 1, highlight_color, sec_tab_color)
+        else:
+            ready_text = fonts[2].render("READY UP!", 1, (255, 255, 255), sec_tab_color)
+        screen.fill(sec_tab_color, ready_rect)  # The background to the troops tab
+        screen.blit(ready_text, (ready_rect[0], ready_rect[1]))  # The text for troops button
+
     return state
 
 
@@ -221,17 +240,20 @@ def commands_menu(screen, fonts, real_screen):
     troops = fonts[3].render("Select Troops", 1, dark_brown, sec_tab_color)
     commands = fonts[3].render("Select Commands", 1, light_brown, main_tab_color)
     resources = fonts[2].render(f"Squad Gold: {resource_val}", 1, light_brown)
-    command_count = fonts[2].render(f"Commands: {len(selected_commands)}/4", 1, (255, 255, 255))
+    command_count = fonts[4].render(f"Commands: {len(selected_commands)}/4", 1, (255, 255, 255))
 
     troops_size = fonts[3].size("Select Troops")
     commands_size = fonts[3].size("Select Commands")
     resources_size = fonts[2].size("Squad Gold: 1000")
+    command_count_size = fonts[4].size(f"Commands: {len(selected_commands)}/4")
 
     troops_rect = pygame.rect.Rect(border, border, troops_size[0], troops_size[1])
     commands_rect = pygame.rect.Rect(troops_size[0] + between, border, commands_size[0], commands_size[1])
     resource_rect = pygame.rect.Rect(commands_rect[0] + commands_size[0] + between,
                                      1.5*border, resources_size[0], resources_size[1])
-    command_count_rect = pygame.rect.Rect(1, 1, 1, 1)
+    command_count_rect = pygame.rect.Rect(troops_size[0] + commands_size[0] + between,
+                                          real_screen.get_height() - 2*command_count_size[1],
+                                          command_count_size[0], command_count_size[1])
 
     troops_tab = pygame.rect.Rect(troops_rect[0] - padding, troops_rect[1] - padding,
                                   troops_rect[2] + 2*padding, troops_rect[3] + 2*padding)
@@ -242,7 +264,7 @@ def commands_menu(screen, fonts, real_screen):
 
     # Buttons for commands
     buttons = [0, 1, 2, 3, 4, 5, 6, 7, 8]
-    troop_type = [entities.BattleCry(), entities.Bombard(), entities.Charge(), entities.Chastise(),
+    command_type = [entities.BattleCry(), entities.Bombard(), entities.Charge(), entities.Chastise(),
                   entities.Regenerate(), entities.ShieldWall(), entities.Stoicism(), entities.Vigilance(),
                   entities.WindsOfFate()]
     width = 800
@@ -257,10 +279,10 @@ def commands_menu(screen, fonts, real_screen):
             if col == 1 and row == 4:
                 continue
             else:
-                buttons[col + 2 * row] = Button(row, col, width, height, spacing, troop_type[col + 2 * row])
+                buttons[col + 2 * row] = Button(row, col, width, height, spacing, command_type[col + 2 * row])
 
-    selected_commands_bar_outer = pygame.Rect(1330, 125, width, (height + spacing)*4 - 40)
-    selected_commands_bar_inner = pygame.Rect(1335, 130, width - 10, (height + spacing)*4 - 50)
+    selected_commands_bar_outer = pygame.Rect(1665, 105, 220, 935)  # magic!!
+    selected_commands_bar_inner = pygame.Rect(1670, 110, 210, 925)  # wooohooo!!
 
     # Check collisions with commands "button"
     mouse_pos = pygame.mouse.get_pos()
@@ -313,16 +335,86 @@ def commands_menu(screen, fonts, real_screen):
         pygame.draw.rect(screen, color, button.outer_border)
         pygame.draw.rect(screen, (0, 0, 0), button.inner_border)
         name = fonts[2].render(button.entity.name, 1, color, (0, 0, 0))
-        cooldown = fonts[2].render("Cooldown: " + str(button.entity.cooldown), 1, color, (0, 0, 0))
+        cost = fonts[2].render("Cost: " + str(button.entity.cost), 1, color, (0, 0, 0))
+        cooldown = fonts[2].render("CD: " + str(button.entity.cooldown), 1, color, (0, 0, 0))
         pygame.draw.line(screen, color, (button.name_top_left[0], button.name_top_left[1] + 50),
                          (button.name_top_left[0] + 300, button.name_top_left[1] + 50))
 
         screen.blit(name, button.name_top_left)
-        screen.blit(cooldown, button.cost_top_left)
+        screen.blit(cost, button.cost_top_left)
+        screen.blit(cooldown, button.cooldown_top_left)
 
         # Draw the stuff inside the button
-        image = pygame.transform.scale(button.entity.image, (32 * 2, 32 * 2))
+        image = pygame.transform.scale(button.entity.image, (90, 90))
         screen.blit(image, button.img_top_left)
+        # split the text of the commands into words and do a text wrap width check
+        words = button.entity.text.split()
+        lines = []
+        while len(words) > 0:
+            line_words = []
+            while len(words) > 0:
+                line_words.append(words.pop(0))
+                fw, fh = fonts[1].size(' '.join(line_words + words[:1]))
+                if fw > 620:  # this number is visually inspected because I cant be bothered to anchor it
+                    break
+            line = ' '.join(line_words)
+            lines.append(line)
+        y_offset = -12
+        for line in lines:
+            fw, fh = fonts[1].size(line)
+            tx = button.stats_top_left[0]
+            ty = button.stats_top_left[1] + y_offset
+            text = fonts[1].render(line, 1, color, (0, 0, 0))
+            screen.blit(text, (tx, ty))
+            y_offset += fh
+
+    # Draw the commands selected side bar
+    pygame.draw.rect(screen, (255, 255, 255), selected_commands_bar_outer)
+    pygame.draw.rect(screen, (0, 0, 0), selected_commands_bar_inner)
+
+    # now check for mouse clicks/hovers to indicate removing a
+    mouse_pos = pygame.mouse.get_pos()
+    scaled_pos = (mouse_pos[0] * x_rat, mouse_pos[1] * y_rat)
+    for i, command in enumerate(selected_commands):
+        color = nonhighlighted_color
+        baseline = 230*i
+        rect = pygame.rect.Rect(selected_commands_bar_inner[0], selected_commands_bar_inner[1] + baseline + 15,
+                                selected_commands_bar_inner[2], 215)
+        if rect.collidepoint(scaled_pos):
+            color = highlight_color
+
+            # Check if it gets clicked
+            if pygame.mouse.get_pressed(num_buttons=5)[0]:
+                # Wait for the release
+                while pygame.mouse.get_pressed(num_buttons=5)[0]:
+                    for event in pygame.event.get():
+                        mouse_pos = pygame.mouse.get_pos()
+                        scaled_pos = (mouse_pos[0] * x_rat, mouse_pos[1] * y_rat)
+                        if event.type == pygame.MOUSEBUTTONUP and rect.collidepoint(scaled_pos):
+                            selected_commands = selected_commands[:i] + selected_commands[i + 1:]
+
+        image = pygame.transform.scale(command.image, (160, 160))
+        name = fonts[1].render(command.name, 1, color, (0, 0, 0))
+        screen.blit(image, (selected_commands_bar_inner[0] + 25, baseline + selected_commands_bar_inner[1] + 15))
+        # quick maths
+        name_x_offset = (selected_commands_bar_inner.width / 2) - (fonts[1].size(command.name)[0] / 2)
+        screen.blit(name, (selected_commands_bar_inner[0] + name_x_offset, baseline + 290))
+
+    # see if the player has finished their loadout
+    if len(selected_commands) == 4 and (len(selected_troops) == 10 or resource_val == 0):
+        # make the ready button
+        ready_rect = pygame.Rect(1500, 25, fonts[2].size("READY UP!")[0], 40)
+        mouse_pos = pygame.mouse.get_pos()
+        scaled_pos = (mouse_pos[0] * x_rat, mouse_pos[1] * y_rat)
+        if ready_rect.collidepoint(scaled_pos):
+            # if it gets clicked, move to the game
+            if pygame.mouse.get_pressed(num_buttons=5)[0]:
+                state = "GAME"
+            ready_text = fonts[2].render("READY UP!", 1, highlight_color, sec_tab_color)
+        else:
+            ready_text = fonts[2].render("READY UP!", 1, (255, 255, 255), sec_tab_color)
+        screen.fill(sec_tab_color, ready_rect)  # The background to the troops tab
+        screen.blit(ready_text, (ready_rect[0], ready_rect[1]))  # The text for troops button
 
     return state
 

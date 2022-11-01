@@ -137,6 +137,7 @@ class BattleCry:
                         "armor":        0,
                         "first_strike": False
                         }
+        self.text = "A target troop you control gains +200 damage and +200 health until the start of your next turn."
 
 
 class Bombard:
@@ -154,6 +155,7 @@ class Bombard:
                         "armor":        0,
                         "first_strike": False
                         }
+        self.text = "A target enemy troop's health is reduced by 100. Troops defeated do not grant Command points."
 
 
 class Charge:
@@ -171,6 +173,7 @@ class Charge:
                         "armor":        0,
                         "first_strike": False
                         }
+        self.text = "A target troop you control has its movement attribute doubled for this turn."
 
 
 class Chastise:
@@ -188,6 +191,9 @@ class Chastise:
                         "armor":        0,
                         "first_strike": False
                         }
+        self.text = "A target enemy troop cannot move or attack during your opponent's next turn. Cannot be used on an"\
+                " opponent's last remaining troop. Chastise does not prevent units from auto-retaliating if attacked"\
+                " during your own turn."
 
 
 class Regenerate:                                       # DOES NOT HAVE EFFECTS, LOGIC IMPLEMENTED MANUALLY
@@ -205,6 +211,7 @@ class Regenerate:                                       # DOES NOT HAVE EFFECTS,
                         "armor":        0,
                         "first_strike": False
                         }
+        self.text = "A target troop you control has its health completely restored."
 
 
 class ShieldWall:
@@ -222,6 +229,7 @@ class ShieldWall:
                         "armor":        100,
                         "first_strike": False
                         }
+        self.text = "All damage dealt to target troop you control is reduced to 100 until the start of your next turn."
 
 
 class Stoicism:
@@ -239,7 +247,7 @@ class Stoicism:
                         "armor":        0,
                         "first_strike": False
                         }
-
+        self.text = "A target troop you control gains +400 health until the start of your next turn."
 
 class Vigilance:
     kind = "command"
@@ -256,6 +264,7 @@ class Vigilance:
                         "armor":        0,
                         "first_strike": True                # ONLY TRIGGERS ON DEFENCE
                         }
+        self.text = "A target troop you control strikes first when defending until the start of your next turn."
 
 
 class WindsOfFate:                                          # DOES NOT HAVE EFFECTS, LOGIC IMPLEMENTED MANUALLY
@@ -273,3 +282,4 @@ class WindsOfFate:                                          # DOES NOT HAVE EFFE
                         "armor":        0,
                         "first_strike": False
                         }
+        self.text = "A command, at random, reaches the end of its cool-down period and is ready to use."
