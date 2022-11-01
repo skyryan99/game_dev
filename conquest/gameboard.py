@@ -73,7 +73,7 @@ def create_board(screen):
             pygame.draw.rect(board, (156, 118, 58), (i*cell_size, j*cell_size, cell_size, cell_size))
     board = add_obstacles(board, cell_size)
     add_border(board, cell_size)
-    return board
+    return board, cell_size
 
 
 def saturate_anchor(anchor, screen, scale_idx, scales):

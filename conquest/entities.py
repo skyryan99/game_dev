@@ -1,10 +1,14 @@
 # Defines all entities in the game
+import os
+import pygame
+
 
 class Scout:
     kind = "troop"
 
     def __init__(self):
         self.name = "Scout"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_s.png")
         self.cost = 25
         self.damage = 100
         self.max_health = 100
@@ -12,6 +16,8 @@ class Scout:
         self.range = 1
         self.speed = 6
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class FootSoldier:
@@ -19,6 +25,7 @@ class FootSoldier:
 
     def __init__(self):
         self.name = "Foot Soldier"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_f.png")
         self.cost = 50
         self.damage = 100
         self.max_health = 300
@@ -26,6 +33,8 @@ class FootSoldier:
         self.range = 1
         self.speed = 4
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class Halberdier:
@@ -33,6 +42,7 @@ class Halberdier:
 
     def __init__(self):
         self.name = "Halberdier"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_h.png")
         self.cost = 75
         self.damage = 200
         self.max_health = 200
@@ -40,6 +50,8 @@ class Halberdier:
         self.range = 2
         self.speed = 4
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class Archer:
@@ -47,6 +59,7 @@ class Archer:
 
     def __init__(self):
         self.name = "Archer"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_a.png")
         self.cost = 100
         self.damage = 100
         self.max_health = 100
@@ -54,6 +67,8 @@ class Archer:
         self.range = 6
         self.speed = 3
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class Mage:
@@ -61,6 +76,7 @@ class Mage:
 
     def __init__(self):
         self.name = "Mage"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_m.png")
         self.cost = 100
         self.damage = 200
         self.max_health = 100
@@ -68,6 +84,8 @@ class Mage:
         self.range = 4
         self.speed = 4
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class Knight:
@@ -75,6 +93,7 @@ class Knight:
 
     def __init__(self):
         self.name = "Knight"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_k.png")
         self.cost = 100
         self.damage = 300
         self.max_health = 300
@@ -82,6 +101,8 @@ class Knight:
         self.range = 1
         self.speed = 4
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class Champion:
@@ -89,6 +110,7 @@ class Champion:
 
     def __init__(self):
         self.name = "Champion"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.cost = 200
         self.damage = 400
         self.max_health = 500
@@ -96,6 +118,8 @@ class Champion:
         self.range = 1
         self.speed = 4
         self.effects = []
+        self.row = 0
+        self.col = 0
 
 
 class BattleCry:
@@ -103,6 +127,7 @@ class BattleCry:
 
     def __init__(self):
         self.name = "Battle Cry"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 75
         self. cooldown = 5
@@ -119,6 +144,7 @@ class Bombard:
 
     def __init__(self):
         self.name = "Bombard"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Opponent"
         self.cost = 200
         self.cooldown = 2
@@ -135,6 +161,7 @@ class Charge:
 
     def __init__(self):
         self.name = "Charge"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 75
         self.cooldown = 5
@@ -151,6 +178,7 @@ class Chastise:
 
     def __init__(self):
         self.name = "Chastise"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Opponent"
         self.cost = 50
         self.cooldown = 3
@@ -167,6 +195,7 @@ class Regenerate:                                       # DOES NOT HAVE EFFECTS,
 
     def __init__(self):
         self.name = "Regenerate"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 150
         self.cooldown = 4
@@ -183,6 +212,7 @@ class ShieldWall:
 
     def __init__(self):
         self.name = "Shield Wall"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 50
         self.cooldown = 5
@@ -199,6 +229,7 @@ class Stoicism:
 
     def __init__(self):
         self.name = "Stoicism"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 75
         self.cooldown = 5
@@ -215,6 +246,7 @@ class Vigilance:
 
     def __init__(self):
         self.name = "Vigilance"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 50
         self.cooldown = 3
@@ -231,6 +263,7 @@ class WindsOfFate:                                          # DOES NOT HAVE EFFE
 
     def __init__(self):
         self.name = "Winds of Fate"
+        self.image = pygame.image.load(os.getcwd() + "/images/letter_c.png")
         self.target = "Self"
         self.cost = 150
         self.cooldown = 2
