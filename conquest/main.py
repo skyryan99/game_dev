@@ -1,127 +1,181 @@
-# Runs game window
-import pygame
-import sys
-import os
+# Runs the game window.
+#
+#   python main.py
+#
+# States:  START -> LOADOUT -> GAME -> (winner overlay) -> START
+#
+# Everything is drawn onto a fixed 1920x1080 surface ("fake screen") which is then stretched to the
+# real, resizable window, so every coordinate below is in 1920x1080 space. Mouse positions are
+# converted with App.to_fake().
 import ctypes
+import random
+import sys
+
+import pygame
 
 import actions
-import entities
-import render
+import assets
+import engine
 import gameboard
+import hud
+import menus
+import render
+
+DEFAULT_SIZE = (1920, 1080)
+SCALES = [1, 2, 4]                  # zoom levels
+FPS = 60
 
 
-"""
-states:
-    WAITING = 1
-    START = 2
-    TROOP_LOADOUT = 3
-    COMMAND_LOADOUT = 4
-    GAME = 5
-    END_GAME = 6
-"""
+class App:
+    def __init__(self):
+        pygame.display.init()
+        pygame.font.init()
+        pygame.display.set_caption("Conquest")
+        # Windows only: gives the app its own taskbar icon instead of python's. Must precede set_mode.
+        if sys.platform == "win32":
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("skyryan99.conquest")
+        self.screen = pygame.display.set_mode(DEFAULT_SIZE, pygame.RESIZABLE)
+        pygame.display.set_icon(assets.image("conquest_icon.png"))
+        self.fake = pygame.Surface(DEFAULT_SIZE)
+        self.clock = pygame.time.Clock()
+        font = assets.font_path("Montserrat-Regular.ttf")
+        # small, medium, large, extra large and huge
+        self.fonts = [pygame.font.Font(font, size) for size in (12, 20, 32, 52, 72)]
 
-"""Init pygame modules"""
-pygame.display.init()
-pygame.font.init()
+        self.state = "START"
+        self.mouse = (0, 0)                 # always in fake-screen coordinates
+        self.start_rect = menus.start_button_rect(self.fonts, DEFAULT_SIZE[0])
+        self.menu = None
+        self.game = None
+        self.controller = None
+        self.cell = gameboard.board_cell_size(self.fake)
+        self.boards = []                    # the board pre-drawn at each zoom level
+        self.scale_idx = 0
+        self.anchor = (0, 0)
+        self.dragging = False
+        self.drag_origin = ((0, 0), (0, 0))
 
-"""Set-up Code"""
-screen_width = 1920  # 1280
-screen_height = 1080  # 720
-default_screen_size = (screen_width, screen_height)
-pygame.display.set_caption('Conquest')
-icon = pygame.image.load(os.getcwd() + '/images/conquest_icon.png')
-font = os.getcwd() + '/fonts/Montserrat-Regular.ttf'
-pygame.display.set_icon(icon)
-# Weird Stack overflow hack for setting taskbar icon on Windows, apparently has to appear before screen is created
-ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Any String Will Do")
-screen = pygame.display.set_mode(default_screen_size, pygame.RESIZABLE)
-window_size_ratio = 1
-fake_screen = screen.copy()
-board, cell_size = gameboard.create_board(fake_screen)
-scale_idx = 0
-scales = [1, 2, 4]
-anchor = (0, 0)
-state = "START"
-# Small, Medium, and Large font sizes
-fonts = [pygame.font.Font(font, 12), pygame.font.Font(font, 20), pygame.font.Font(font, 32),
-         pygame.font.Font(font, 52), pygame.font.Font(font, 72)]
-pygame.init()
-clock = pygame.time.Clock()
-# TEST
-test_troops = list()
-test_champion = entities.Champion()
-test_champion.row += 4
-test_champion.col += 1
-test_troops.append(test_champion)
-test_knight = entities.Knight()
-test_troops.append(test_knight)
-"""Loop"""
-while True:
-    clock.tick(80)
-    # Should keep anchor memory but let board snap into place if moved beyond limits
-    anchor = gameboard.saturate_anchor(anchor, fake_screen, scale_idx, scales)
-    state = render.update_interface(state, fake_screen, screen, board, anchor, fonts, test_troops, cell_size,
-                                    scales[scale_idx])
+    # ---- helpers
 
-    for event in pygame.event.get():
-        # Grab mouse clicks
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            buttons = pygame.mouse.get_pressed(num_buttons=5)
-            if buttons[0]:  # Left Click
-                print("Mouse Clicked")
-                pos = pygame.mouse.get_pos()
-                actions.check_user_click(fake_screen, pos, board)
-            elif buttons[2]:  # Right Click
-                print("Right Clicked")
-                pos = pygame.mouse.get_pos()
-                actions.check_user_click(fake_screen, pos, board)
-            elif buttons[1]:  # Middle mouse button
-                print("Scroll Wheel Clicked")
-                if state == "GAME":
-                    if scale_idx == 0:  # Don't even bother doing the calcs
-                        continue
-                    mxi, myi = pygame.mouse.get_pos()
-                    anchorxi, anchoryi = anchor[0], anchor[1]
-                    held = True
-                    while held:
-                        mx, my = pygame.mouse.get_pos()
-                        anchor = (((mx-mxi) / window_size_ratio) + anchorxi, ((my-myi) / window_size_ratio) + anchoryi)
-                        state = render.update_interface(state, fake_screen, screen, board, anchor, fonts, test_troops,
-                                                        cell_size, scales[scale_idx])
-                        for interrupt_event in pygame.event.get():
-                            if interrupt_event.type == pygame.MOUSEBUTTONUP:
-                                held = False
-        elif event.type == pygame.MOUSEWHEEL:  # Middle mouse button scroll
-            print("Mouse Scrolled")
-            if state == "GAME":
-                # Grab the mouse position first
-                mx, my = pygame.mouse.get_pos()
-                # If scrolling in
-                if event.y == 1 and scale_idx < 2:
-                    old_rect = board.get_rect()
-                    board = pygame.transform.scale(board, (old_rect[2]*2, old_rect[3]*2))
-                    anchor = (anchor[0]*2 - (mx/window_size_ratio), anchor[1]*2 - (my/window_size_ratio))
-                    scale_idx += 1
-                elif event.y == -1 and scale_idx > 0:
-                    old_rect = board.get_rect()
-                    board = pygame.transform.scale(board, (old_rect[2]*0.5, old_rect[3]*0.5))
-                    anchor = (anchor[0]*0.5 + (mx*0.5/window_size_ratio), anchor[1]*0.5 + (my*0.5/window_size_ratio))
-                    scale_idx -= 1
-        # Grab exit X events
-        elif event.type == pygame.QUIT:
-            print("Quitting")
+    def to_fake(self, pos):
+        w, h = self.screen.get_size()
+        return pos[0] * DEFAULT_SIZE[0] / w, pos[1] * DEFAULT_SIZE[1] / h
+
+    def hover_unit(self):
+        if self.state != "GAME" or self.mouse[0] >= hud.panel_x(self.fake):
+            return None
+        tile = gameboard.tile_at(self.mouse, self.anchor, self.cell, SCALES[self.scale_idx])
+        return self.game.unit_at(*tile) if tile else None
+
+    def new_menu(self):
+        self.menu = menus.LoadoutMenu(self.fonts, DEFAULT_SIZE)
+
+    def start_game(self):
+        # Hot-seat for now: player 2 gets a copy of player 1's squad until online play is hooked up.
+        loadouts = [self.menu.loadout, engine.Loadout.from_dict(self.menu.loadout.to_dict())]
+        self.game = engine.Game.new(loadouts, rng=random.Random())
+        self.controller = actions.Controller(self.game)
+        self.boards = [gameboard.create_board(self.cell * s, self.game.obstacles) for s in SCALES]
+        self.scale_idx = 0
+        self.anchor = (0, 0)
+        self.state = "GAME"
+
+    # ---- events
+
+    def handle_event(self, event):
+        if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit(0)
-        # Grab key presses
-        elif event.type == pygame.KEYDOWN:
-            # Esc
-            if event.key == pygame.K_ESCAPE:
-                print("Esc pressed")
-        # Grab min/max window events
         elif event.type == pygame.VIDEORESIZE:
-            width, height = event.size
-            if width < 640:  # saturate the min width
-                width = 640
-            height = 0.5625 * width  # maintain 16:9 aspect ratio
-            screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
-            window_size_ratio = width / default_screen_size[0]
+            width = max(640, event.size[0])
+            self.screen = pygame.display.set_mode((width, int(width * DEFAULT_SIZE[1] / DEFAULT_SIZE[0])),
+                                                  pygame.RESIZABLE)
+        elif event.type == pygame.MOUSEMOTION:
+            self.mouse = self.to_fake(event.pos)
+            if self.dragging:
+                (mx0, my0), (ax0, ay0) = self.drag_origin
+                self.anchor = (ax0 + self.mouse[0] - mx0, ay0 + self.mouse[1] - my0)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            self.mouse = self.to_fake(event.pos)
+            self.on_mouse_down(event.button)
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 2:
+                self.dragging = False
+        elif event.type == pygame.MOUSEWHEEL:
+            if self.state == "GAME":
+                self.zoom(event.y)
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE and self.state == "GAME":
+                self.controller.cancel()
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and self.state == "GAME" and self.game.winner is not None:
+                self.state = "START"
+
+    def on_mouse_down(self, button):
+        if self.state == "START":
+            if button == 1 and self.start_rect.collidepoint(self.mouse):
+                self.new_menu()
+                self.state = "LOADOUT"
+        elif self.state == "LOADOUT":
+            if button == 1 and self.menu.handle_click(self.mouse) == "GAME":
+                self.start_game()
+        elif self.state == "GAME":
+            if self.game.winner is not None:
+                if button == 1:
+                    self.state = "START"
+            elif button == 2:
+                if self.scale_idx > 0:
+                    self.dragging = True
+                    self.drag_origin = (self.mouse, self.anchor)
+            elif button == 3:
+                self.controller.cancel()
+            elif button == 1:
+                if self.mouse[0] >= hud.panel_x(self.fake):
+                    self.controller.click_button(hud.button_at(self.fake, self.game, self.mouse))
+                else:
+                    tile = gameboard.tile_at(self.mouse, self.anchor, self.cell, SCALES[self.scale_idx])
+                    self.controller.click_tile(tile)
+
+    def zoom(self, direction):
+        """Zoom one level in (direction > 0) or out, keeping the tile under the mouse in place."""
+        mx, my = self.mouse
+        ax, ay = self.anchor
+        if direction > 0 and self.scale_idx < len(SCALES) - 1:
+            self.anchor = (ax * 2 - mx, ay * 2 - my)
+            self.scale_idx += 1
+        elif direction < 0 and self.scale_idx > 0:
+            self.anchor = (ax * 0.5 + mx * 0.5, ay * 0.5 + my * 0.5)
+            self.scale_idx -= 1
+
+    # ---- drawing
+
+    def draw(self):
+        if self.state == "START":
+            self.start_rect = menus.draw_start(self.fake, self.fonts, self.mouse)
+        elif self.state == "LOADOUT":
+            self.menu.draw(self.fake, self.mouse)
+        elif self.state == "GAME":
+            self.anchor = gameboard.saturate_anchor(self.anchor, self.fake, self.scale_idx, SCALES)
+            scale = SCALES[self.scale_idx]
+            # self.boards[i] is pre-drawn at cell * SCALES[i] pixels, so the board stays crisp at every zoom
+            render.draw_background(self.fake)
+            render.draw_board(self.fake, self.boards[self.scale_idx], self.anchor)
+            hover = self.hover_unit()
+            render.draw_highlights(self.fake, self.game, hover, self.cell, self.anchor, scale)
+            render.draw_units(self.fake, self.game, self.cell, self.anchor, scale)
+            hud.draw(self.fake, self.fonts, self.game, self.mouse, hover, self.controller.armed,
+                     self.controller.message)
+            if self.game.winner is not None:
+                render.draw_winner(self.fake, self.fonts, self.game.winner)
+        render.present(self.fake, self.screen)
+
+    def run(self):
+        while True:
+            for event in pygame.event.get():
+                self.handle_event(event)
+            self.draw()
+            self.clock.tick(FPS)
+
+
+if __name__ == "__main__":
+    pygame.init()
+    App().run()

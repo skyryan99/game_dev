@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+# editor leftovers (vim backup/undo files)
+*~
+.*.un~
+*.swp
