@@ -258,19 +258,108 @@ class CommandTests(unittest.TestCase):
             g.end_turn(); g.end_turn()
             self.assertEqual(g.cooldowns[0]["chastise"], expected)
 
-    def test_buffs_expire_at_the_casters_next_turn_and_health_clamps(self):
+    def test_stoicism_grants_temporary_health_not_real_health(self):
         g = make_game([("scout", 17, 0)], [("foot_soldier", 3, 5), ("scout", 0, 0)], p1_cmds=["stoicism"])
-        g.end_turn()                                         # player 1's turn
+        g.end_turn()
         g.command_points[1] = 500
         fs = g.unit_at(3, 5)
         g.use_command("stoicism", fs.uid)
-        self.assertEqual(fs.health, 700)
-        fs.health = 600                                      # pretend it took a hit
-        g.end_turn()                                         # player 0 -- buff still active
+        self.assertEqual((fs.health, fs.temp_health), (300, 400))
+
+    def test_damage_drains_temporary_health_first_then_spills_over(self):
+        g = make_game([("champion", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)])
+        fs = g.unit_at(9, 5)
+        fs.effects["stoicism"] = 1
+        fs.temp_health = 400
+        g.select_unit(uid_at(g, 10, 5))
+        g.attack(fs.uid)                                     # champion hits for 400: all absorbed
+        self.assertEqual((fs.health, fs.temp_health), (300, 0))
+        g2 = make_game([("champion", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)])
+        fs2 = g2.unit_at(9, 5)
+        fs2.effects["battle_cry"] = 1
+        fs2.temp_health = 200
+        g2.select_unit(uid_at(g2, 10, 5))
+        g2.attack(fs2.uid)                                   # 400 damage: 200 absorbed, 200 real
+        self.assertEqual((fs2.health, fs2.temp_health), (100, 0))
+
+    def test_temporary_health_is_stripped_at_the_casters_next_turn(self):
+        g = make_game([("scout", 17, 0)], [("foot_soldier", 3, 5), ("scout", 0, 0)], p1_cmds=["stoicism"])
+        g.end_turn()
+        g.command_points[1] = 500
+        fs = g.unit_at(3, 5)
+        g.use_command("stoicism", fs.uid)
+        g.end_turn()                                         # player 1's turn: buff still there
+        self.assertEqual(fs.temp_health, 400)
         self.assertIn("stoicism", fs.effects)
-        g.end_turn()                                         # player 1's next turn -- buff gone
+        g.end_turn()                                         # player 2's next turn: stripped
+        self.assertEqual(fs.temp_health, 0)
         self.assertNotIn("stoicism", fs.effects)
         self.assertEqual(fs.health, 300)
+
+    def test_partially_spent_temporary_health_never_leaves_you_healthier(self):
+        g = make_game([("scout", 17, 0)], [("foot_soldier", 3, 5), ("scout", 0, 0)], p1_cmds=["stoicism"])
+        g.end_turn()
+        g.command_points[1] = 500
+        fs = g.unit_at(3, 5)
+        g.use_command("stoicism", fs.uid)
+        g._damage(fs, 150)                                   # absorbed by the temporary pool
+        self.assertEqual((fs.health, fs.temp_health), (300, 250))
+        g.end_turn(); g.end_turn()
+        self.assertEqual((fs.health, fs.temp_health), (300, 0))   # same real health as before the buff
+
+    def test_buff_never_heals_a_damaged_troop(self):
+        g = make_game([("scout", 17, 0)], [("knight", 3, 5), ("scout", 0, 0)], p1_cmds=["battle_cry"])
+        g.end_turn()
+        g.command_points[1] = 500
+        knight = g.unit_at(3, 5)
+        knight.health = 120
+        g.use_command("battle_cry", knight.uid)
+        self.assertEqual(knight.health, 120)
+        g.end_turn(); g.end_turn()
+        self.assertEqual(knight.health, 120)
+
+    def test_health_after_a_buff_is_never_more_than_before_it(self):
+        """Whatever the damage in between, expiry leaves real health <= what it was when the buff was cast."""
+        rng = random.Random(3)
+        for _ in range(200):
+            g = make_game([("scout", 17, 0)], [("champion", 3, 5), ("scout", 0, 0)], p1_cmds=["stoicism", "battle_cry"])
+            g.end_turn()
+            g.command_points[1] = 1000
+            champ = g.unit_at(3, 5)
+            champ.health = rng.randint(1, 500)
+            before = champ.health
+            for cmd in ("stoicism", "battle_cry"):
+                if rng.random() < 0.7:
+                    g.use_command(cmd, champ.uid)
+            g.end_turn()                                     # the opponent's turn: damage lands here
+            for _ in range(rng.randint(0, 4)):
+                if champ.uid in g.units:
+                    g._damage(champ, rng.choice([50, 100, 200, 400]))
+            if champ.uid not in g.units or champ.health <= 0:
+                continue
+            g.end_turn()                                     # back to the caster: the buff expires
+            self.assertEqual(champ.temp_health, 0)
+            self.assertLessEqual(champ.health, before)
+
+    def test_two_temporary_health_buffs_stack_and_expire_together(self):
+        g = make_game([("scout", 17, 0)], [("champion", 3, 5), ("scout", 0, 0)], p1_cmds=["stoicism", "battle_cry"])
+        g.end_turn()
+        g.command_points[1] = 1000
+        champ = g.unit_at(3, 5)
+        g.use_command("stoicism", champ.uid)
+        g.use_command("battle_cry", champ.uid)
+        self.assertEqual(champ.temp_health, 600)
+        g.end_turn(); g.end_turn()
+        self.assertEqual((champ.health, champ.temp_health), (500, 0))
+
+    def test_bombard_hits_temporary_health_first(self):
+        g = make_game([("scout", 17, 0)], [("knight", 0, 0), ("scout", 0, 5)], p0_cmds=["bombard"])
+        self.give_points(g, 0, 400)
+        knight = g.unit_at(0, 0)
+        knight.effects["battle_cry"] = 1
+        knight.temp_health = 200
+        g.use_command("bombard", knight.uid)
+        self.assertEqual((knight.health, knight.temp_health), (300, 100))
 
     def test_regenerate_restores_to_max(self):
         g = make_game([("champion", 10, 5)], [("scout", 0, 0)], p0_cmds=["regenerate"])
@@ -279,6 +368,15 @@ class CommandTests(unittest.TestCase):
         c.health = 50
         g.use_command("regenerate", c.uid)
         self.assertEqual(c.health, 500)
+
+    def test_regenerate_restores_real_health_and_leaves_temporary_health_alone(self):
+        g = make_game([("champion", 10, 5)], [("scout", 0, 0)], p0_cmds=["regenerate"])
+        self.give_points(g, 0)
+        c = g.unit_at(10, 5)
+        c.health, c.temp_health = 50, 120
+        c.effects["stoicism"] = 0
+        g.use_command("regenerate", c.uid)
+        self.assertEqual((c.health, c.temp_health), (500, 120))
 
     def test_bombard_reduces_health_and_kill_gives_no_points(self):
         g = make_game([("scout", 17, 0)], [("scout", 0, 0), ("knight", 0, 5)], p0_cmds=["bombard"])
@@ -391,7 +489,8 @@ class CommandTests(unittest.TestCase):
 
 class TurnFlowTests(unittest.TestCase):
     def test_phases_advance_and_turn_passes(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        # an enemy within reach keeps the combat phase alive, so every phase is visible
+        g = make_game([("scout", 17, 5)], [("scout", 16, 5), ("scout", 0, 5)])
         self.assertEqual(g.phase, engine.SELECTION)
         g.select_unit(uid_at(g, 17, 5))
         self.assertEqual(g.phase, engine.MOVEMENT)
@@ -421,6 +520,82 @@ class TurnFlowTests(unittest.TestCase):
         g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
         g.resign(0)
         self.assertEqual(g.winner, 1)
+
+
+class AutoAdvanceTests(unittest.TestCase):
+    def test_movement_ends_by_itself_when_the_steps_run_out(self):
+        g = make_game([("scout", 17, 5)], [("scout", 16, 9), ("scout", 0, 5)])
+        g.select_unit(uid_at(g, 17, 5))
+        g.move_unit(15, 5)                                   # 2 of 6 steps: still moving
+        self.assertEqual(g.phase, engine.MOVEMENT)
+        g.move_unit(15, 9)                                   # 4 more steps -> 0 left, enemy at (16,9) is adjacent
+        self.assertEqual(g.moves_left, 0)
+        self.assertEqual(g.phase, engine.COMBAT)
+
+    def test_combat_is_skipped_when_nothing_is_in_range(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        g.select_unit(uid_at(g, 17, 5))
+        g.move_unit(11, 5)                                   # all 6 steps, nobody near
+        self.assertEqual(g.phase, engine.RALLY)
+
+    def test_ending_movement_early_also_skips_an_empty_combat(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        g.select_unit(uid_at(g, 17, 5))
+        g.end_phase()
+        self.assertEqual(g.phase, engine.RALLY)
+
+    def test_combat_waits_for_the_player_when_a_target_is_in_range(self):
+        g = make_game([("knight", 10, 5)], [("foot_soldier", 9, 5), ("scout", 0, 0)])
+        g.select_unit(uid_at(g, 10, 5))
+        g.end_phase()
+        self.assertEqual(g.phase, engine.COMBAT)
+
+    def test_a_boxed_in_troop_skips_movement_straight_away(self):
+        g = make_game([("scout", 10, 5)], [("scout", 0, 0)], obstacles=[(9, 5), (11, 5), (10, 4), (10, 6)])
+        g.select_unit(uid_at(g, 10, 5))
+        self.assertEqual(g.phase, engine.RALLY)              # no way out, nobody to hit
+
+    def test_movement_waits_while_a_charge_could_still_help(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=["charge"])
+        g.command_points[0] = 500
+        g.select_unit(uid_at(g, 17, 5))
+        g.move_unit(11, 5)                                   # steps spent, but Charge would give 6 more
+        self.assertEqual(g.phase, engine.MOVEMENT)
+        g.use_command("charge", uid_at(g, 11, 5))
+        self.assertEqual(g.moves_left, 6)
+        g.move_unit(5, 5)                                    # now truly out of steps
+        self.assertNotEqual(g.phase, engine.MOVEMENT)
+
+    def test_movement_does_not_wait_for_a_charge_the_player_cannot_use(self):
+        for kwargs in (dict(p0_cmds=[]), dict(p0_cmds=["charge"])):
+            g = make_game([("scout", 17, 5)], [("scout", 0, 5)], **kwargs)
+            g.command_points[0] = 0                          # no command points either way
+            g.select_unit(uid_at(g, 17, 5))
+            g.move_unit(11, 5)
+            self.assertEqual(g.phase, engine.RALLY, kwargs)
+
+    def test_rally_never_ends_the_turn_by_itself(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        g.select_unit(uid_at(g, 17, 5))
+        g.move_unit(11, 5)
+        self.assertEqual((g.phase, g.current), (engine.RALLY, 0))
+        g.end_phase()
+        self.assertEqual(g.current, 1)
+
+    def test_selection_is_skipped_when_every_troop_is_chastised(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5), ("scout", 0, 8)])
+        for unit in g.units_of(1):
+            unit.effects["chastise"] = 0                     # cast by player 0
+        g.end_turn()                                         # player 1: nobody can act
+        self.assertEqual((g.current, g.phase), (1, engine.RALLY))
+        g.end_turn(); g.end_turn()                           # chastise wears off on player 0's next turn
+        self.assertEqual(g.phase, engine.SELECTION)
+
+    def test_attacking_still_goes_straight_to_rally(self):
+        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)])
+        g.select_unit(uid_at(g, 10, 5))
+        g.attack(uid_at(g, 9, 5))
+        self.assertEqual(g.phase, engine.RALLY)
 
 
 class SerialisationTests(unittest.TestCase):

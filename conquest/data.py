@@ -3,8 +3,8 @@
 #
 # Troop stats come from game.txt / the RuneScape wiki.
 # Command effects are data driven: the engine reads "damage_bonus",
-# "health_bonus" and "damage_cap" off any command that is currently active on a
-# unit, so adding a buff command is just a new entry here.
+# "health_bonus" (temporary hit points) and "damage_cap" off any command that is currently
+# active on a unit, so adding a buff command is just a new entry here.
 
 TROOPS = {
     "scout":       dict(name="Scout",        cost=25,  damage=100, health=100, range=1, speed=6, icon="letter_s.png"),
@@ -21,7 +21,7 @@ COMMANDS = {
     "battle_cry": dict(
         name="Battle Cry", cost=75, cooldown=5, target="ally", icon="letter_c.png",
         damage_bonus=200, health_bonus=200,
-        text="A target troop you control gains +200 damage and +200 health until the start of your next turn."),
+        text="A target troop you control gains +200 damage and 200 temporary health until the start of your next turn."),
     "bombard": dict(
         name="Bombard", cost=200, cooldown=2, target="enemy", icon="letter_c.png",
         text="A target enemy troop's health is reduced by 100. Troops defeated do not grant Command points."),
@@ -43,7 +43,7 @@ COMMANDS = {
     "stoicism": dict(
         name="Stoicism", cost=75, cooldown=5, target="ally", icon="letter_c.png",
         health_bonus=400,
-        text="A target troop you control gains +400 health until the start of your next turn."),
+        text="A target troop you control gains 400 temporary health until the start of your next turn."),
     "vigilance": dict(
         name="Vigilance", cost=50, cooldown=3, target="ally", icon="letter_c.png",
         text="A target troop you control strikes first when defending until the start of your next turn."),
@@ -51,6 +51,9 @@ COMMANDS = {
         name="Winds of Fate", cost=150, cooldown=2, target="none", icon="letter_c.png",
         text="A command, at random, reaches the end of its cool-down period and is ready to use."),
 }
+
+# Temporary health is a separate pool: damage drains it before real health, and whatever is left
+# is stripped away at the start of the caster's next turn (see engine.Game._start_turn).
 
 TROOP_ORDER = list(TROOPS)
 COMMAND_ORDER = list(COMMANDS)

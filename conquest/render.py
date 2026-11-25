@@ -11,6 +11,7 @@ EFFECT_COLORS = {
     "battle_cry": (255, 150, 30), "stoicism": (60, 200, 90), "shield_wall": (150, 170, 200),
     "vigilance": (240, 220, 60), "chastise": (170, 80, 220), "charge": (255, 255, 255),
 }
+HOVER_TILE = (255, 238, 180, 62)   # translucent warm wash over a hovered troop's square
 _overlays = {}
 
 
@@ -41,6 +42,9 @@ def draw_highlights(screen, game, hover_unit, cell, anchor, scale):
     unit = game.selected_unit or hover_unit
     if unit is None:
         return
+    if hover_unit is not None:                           # the square under the mouse warms up a little
+        x, y, size = _tile_xy(hover_unit.pos, cell, anchor, scale)
+        screen.blit(_overlay(size, HOVER_TILE), (x, y))
     if game.selected_unit is None or game.phase == engine.MOVEMENT:
         for tile in game.reachable_tiles(unit):
             x, y, size = _tile_xy(tile, cell, anchor, scale)
@@ -59,13 +63,20 @@ def draw_units(screen, game, cell, anchor, scale):
         x, y, size = _tile_xy(unit.pos, cell, anchor, scale)
         pygame.draw.rect(screen, PLAYER_COLORS[unit.owner], (x + 2, y + 2, size - 4, size - 4),
                          width=max(2, size // 16))
+        screen.blit(_overlay(size - 8, (0, 0, 0, 95)), (x + 4, y + 4))      # dark backing keeps the icon legible on wood
         icon = assets.scaled(unit.stats["icon"], int(size * 0.6))
         screen.blit(icon, (x + (size - icon.get_width()) // 2, y + (size - icon.get_height()) // 2))
         # health bar along the bottom of the tile
         bar_w, bar_h = size - 8, max(3, size // 12)
         pygame.draw.rect(screen, (90, 20, 20), (x + 4, y + size - bar_h - 4, bar_w, bar_h))
-        frac = max(0.0, min(1.0, unit.health / unit.effective_max_health))
+        frac = max(0.0, min(1.0, unit.health / unit.max_health))
         pygame.draw.rect(screen, (60, 200, 80), (x + 4, y + size - bar_h - 4, int(bar_w * frac), bar_h))
+        # temporary health: a thin blue bar stacked above the real one (full when the buff was cast)
+        if unit.temp_capacity:
+            tfrac = max(0.0, min(1.0, unit.temp_health / unit.temp_capacity))
+            top = y + size - 2 * bar_h - 6
+            pygame.draw.rect(screen, (30, 50, 80), (x + 4, top, bar_w, bar_h))
+            pygame.draw.rect(screen, (90, 190, 255), (x + 4, top, int(bar_w * tfrac), bar_h))
         # one coloured pip per active effect, top left
         pip = max(4, size // 8)
         for i, effect in enumerate(unit.effects):

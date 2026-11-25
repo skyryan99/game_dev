@@ -1,18 +1,24 @@
-# The rukes of conquest
+# The rules of Conquest, with no pygame in sight.
 #
 # Everything the UI, the server and the tests need to know about game state
-# lives in `Game`. The UI only ever reads from it to draw and calls its
-# methods to act. Illegal actions raise `IllegalAction` and don't change
+# lives in `Game`. The UI only ever *reads* from it (to draw) and *calls its
+# methods* (to act). Illegal actions raise `IllegalAction` and never change
 # state, so a server can feed untrusted client messages straight to
 # `Game.apply_action`.
 #
-# Rule assumptions:
+# Rule assumptions where the wiki is silent (change them here in one place):
 #   * movement is 4-directional (no diagonals) and cannot pass through units or obstacles
 #   * range is Manhattan distance
 #   * a defender retaliates only if the attacker is inside the defender's range
-#   * a buff's extra health is clamped away when it expires (health = min(health, max))
+#   * buffs like Battle Cry / Stoicism grant *temporary* health: a separate pool that all damage
+#     drains first, and that is stripped at the start of your next turn. It never heals real health,
+#     so you can never come out of a buff with more health than you went in with
 #   * Bombard is not "damage", so Shield Wall does not reduce it
 #   * commands are free to pick in the loadout (only troops cost gold)
+#   * phases end by themselves when there is nothing left to do in them (no movement left, no target in
+#     range, nobody able to act). Commands work in any phase, so skipping ahead never costs you one --
+#     except Charge, so the movement phase waits while a Charge could still help. The rally phase never
+#     ends by itself, because ending your turn is always your call
 import random
 from collections import deque
 from dataclasses import dataclass, field
@@ -183,6 +189,7 @@ class Unit:
     col: int
     health: int
     effects: dict = field(default_factory=dict)     # active command key -> player who cast it
+    temp_health: int = 0                            # temporary hit points, spent before real health
 
     @property
     def pos(self):
@@ -217,8 +224,9 @@ class Unit:
         return self.stats["damage"] + sum(data.COMMANDS[e].get("damage_bonus", 0) for e in self.effects)
 
     @property
-    def effective_max_health(self):
-        return self.max_health + sum(data.COMMANDS[e].get("health_bonus", 0) for e in self.effects)
+    def temp_capacity(self):
+        """The most temporary health the currently active effects could be holding."""
+        return sum(data.COMMANDS[e].get("health_bonus", 0) for e in self.effects)
 
     @property
     def damage_cap(self):
@@ -235,11 +243,12 @@ class Unit:
 
     def to_dict(self):
         return {"uid": self.uid, "owner": self.owner, "kind": self.kind, "row": self.row, "col": self.col,
-                "health": self.health, "effects": dict(self.effects)}
+                "health": self.health, "effects": dict(self.effects), "temp_health": self.temp_health}
 
     @classmethod
     def from_dict(cls, d):
-        return cls(d["uid"], d["owner"], d["kind"], d["row"], d["col"], d["health"], dict(d.get("effects", {})))
+        return cls(d["uid"], d["owner"], d["kind"], d["row"], d["col"], d["health"], dict(d.get("effects", {})),
+                   d.get("temp_health", 0))
 
 
 # ----------------------------------------------------------------- game -----
@@ -382,12 +391,14 @@ class Game:
         for unit in self.units.values():
             for effect in [e for e, caster in unit.effects.items() if caster == player]:
                 del unit.effects[effect]
-            unit.health = min(unit.health, unit.effective_max_health)
+            # Strip temporary health that no active effect backs any more (it all goes at once).
+            unit.temp_health = min(unit.temp_health, unit.temp_capacity)
         self.command_points[player] += COMMAND_POINTS_PER_TURN
         for key in self.cooldowns[player]:
             if self.cooldowns[player][key] > 0:
                 self.cooldowns[player][key] -= 1
         self._log("Turn %d: player %d" % (self.turn_number, player + 1))
+        self._auto_advance()
 
     def end_turn(self):
         self._require_live()
@@ -405,6 +416,8 @@ class Game:
             self.phase = RALLY
         else:
             self.end_turn()
+            return
+        self._auto_advance()
 
     def resign(self, player):
         if self.winner is None:
@@ -425,6 +438,7 @@ class Game:
         self.selected = uid
         self.moves_left = unit.speed * (2 if "charge" in unit.effects else 1)
         self.phase = MOVEMENT
+        self._auto_advance()
 
     def move_unit(self, row, col):
         self._require_live()
@@ -436,6 +450,7 @@ class Game:
             raise IllegalAction("that tile is out of reach")
         unit.row, unit.col = row, col
         self.moves_left -= cost
+        self._auto_advance()
 
     def attack(self, target_uid):
         self._require_live()
@@ -482,11 +497,11 @@ class Game:
             if key in target.effects:
                 raise IllegalAction("%s is already active on that troop" % spec["name"])
             target.effects[key] = player
-            target.health += spec.get("health_bonus", 0)
+            target.temp_health += spec.get("health_bonus", 0)
         elif key == "regenerate":
-            target.health = target.effective_max_health
+            target.health = target.max_health           # real health only; temporary health is untouched
         elif key == "bombard":
-            target.health -= 100
+            self._damage(target, 100)
             if target.health <= 0:
                 self._remove(target, credit=None)      # no command points for a Bombard kill
         elif key == "chastise":
@@ -507,6 +522,37 @@ class Game:
         self.cooldowns[player][key] = spec["cooldown"]
         self._log("Player %d used %s" % (player + 1, spec["name"]))
 
+    # ---- automatic phase skipping
+
+    def _movement_finished(self):
+        """True when the acting troop has nothing left to do in the movement phase."""
+        unit = self.selected_unit
+        if unit is None:
+            return True
+        if self.moves_left > 0 and self.reachable_tiles(unit):
+            return False                                    # still somewhere to walk
+        # Out of steps (or boxed in). Wait only if a Charge could still open up somewhere to go.
+        if self.command_status(self.current, "charge") is None and "charge" not in unit.effects:
+            return not self.reachable_tiles(unit, budget=self.moves_left + unit.speed)
+        return True
+
+    def _auto_advance(self):
+        """Skip phases that have nothing left in them. Called after anything that could finish one."""
+        while self.winner is None:
+            if self.phase == SELECTION and all(u.chastised for u in self.units_of(self.current)):
+                self.phase = RALLY
+                self._log("No troop can act this turn")
+            elif self.phase == MOVEMENT and self._movement_finished():
+                self.phase = COMBAT
+                self._log("Movement ended: nowhere left to go")
+            elif self.phase == COMBAT and (
+                    self.has_attacked or self.selected_unit is None
+                    or not self.attack_targets(self.selected_unit)):
+                self.phase = RALLY
+                self._log("Combat skipped: no target in range")
+            else:
+                return
+
     # ---- combat internals
 
     def _strike(self, striker, victim):
@@ -514,10 +560,17 @@ class Game:
         cap = victim.damage_cap
         if cap is not None:
             dmg = min(dmg, cap)
-        victim.health -= dmg
+        self._damage(victim, dmg)
         self._log("%s hits %s for %d" % (striker.name, victim.name, dmg))
         if victim.health <= 0:
             self._remove(victim, credit=striker.owner)
+
+    @staticmethod
+    def _damage(unit, amount):
+        """Damage drains temporary health first, then real health."""
+        absorbed = min(unit.temp_health, amount)
+        unit.temp_health -= absorbed
+        unit.health -= amount - absorbed
 
     def _remove(self, unit, credit):
         del self.units[unit.uid]

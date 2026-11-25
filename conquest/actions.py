@@ -54,17 +54,19 @@ class Controller:
     def click_button(self, button):
         if button is None:
             return
-        if button.kind in ("end_phase", "end_turn", "resign"):
-            self.armed = None
-            self.perform({"type": button.kind})
+        if button.kind == "command":
+            key = button.key
+            reason = self.game.command_status(self.game.current, key)
+            if reason:
+                self.message = reason
+            elif data.COMMANDS[key]["target"] == "none":
+                self.armed = None
+                self.perform({"type": "command", "command": key})
+            else:
+                self.armed = None if self.armed == key else key
+                self.message = ""
             return
-        key = button.key
-        reason = self.game.command_status(self.game.current, key)
-        if reason:
-            self.message = reason
-        elif data.COMMANDS[key]["target"] == "none":
-            self.armed = None
-            self.perform({"type": "command", "command": key})
-        else:
-            self.armed = None if self.armed == key else key
-            self.message = ""
+        if not button.enabled:                       # a phase button for a phase that is not the current one
+            return
+        self.armed = None
+        self.perform({"type": {"phase": "end_phase", "end_turn": "end_turn", "resign": "resign"}[button.kind]})

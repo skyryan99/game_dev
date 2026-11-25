@@ -30,6 +30,7 @@ No pygame is needed for the tests: the rules engine does not import it.
 | `gamemenu.py`, `screenconfig.py` | The Esc menu, and the window/resolution settings + canvas-to-window maths (no pygame, tested). |
 | `menus.py` | Start screen and the troop / command pickers. |
 | `hud.py`, `render.py`, `gameboard.py` | Drawing: side panels, units + highlights, board and zoom maths. |
+| `textures.py` | Procedural wood-grain floor tiles and rock obstacles (no image files needed). |
 | `actions.py` | `Controller`: turns clicks into engine actions. |
 | `assets.py` | Loads and caches images and fonts (paths are relative to the file, not the working directory). |
 | `protocol.py`, `server.py`, `network.py` | Online play: JSON messages, an authoritative server, a non-blocking client. |
@@ -43,6 +44,8 @@ the same call the server makes for each client message, so illegal moves are rej
 ## Controls
 
 * Left click a troop to select it, a blue tile to move, a red-highlighted enemy to attack.
+* The side panel has one button per phase (Selection, Movement, Combat, Rally). The current phase's button circles
+  with a golden glow; click it to end that phase. Phases also end by themselves when nothing is left to do.
 * Side panel: End Phase, End Turn, Resign, and your commands (click a command, then click its target).
 * Right click cancels a pending command. Mouse wheel zooms, middle-drag pans.
 * **Esc** cancels a pending command in a game; with nothing to cancel (and on every other screen) it opens the menu:
@@ -56,10 +59,17 @@ The wiki does not say, so these are assumptions (all in one place at the top of 
 
 * Movement is 4-directional and cannot pass through troops or obstacles; range is Manhattan distance.
 * A defender hits back only if the attacker is inside the defender's own range.
-* Buff health (Battle Cry, Stoicism) is clamped away when the buff expires.
+* Battle Cry and Stoicism grant *temporary* health: a separate pool that damage (including Bombard) drains
+  first, stripped at the start of your next turn. It never heals real health, so a buff can't leave a troop
+  healthier than it was. Regenerate restores real health only.
 * Bombard is not "damage", so Shield Wall does not reduce it.
-* Commands cost nothing in the loadout (only troops cost gold); command points are spent in-game.
+* Commands cost no squad gold in the loadout (only troops do); they cost command points in the game.
+  The menus label these "Gold cost" and "Command point cost".
 * Obstacles live in rows 5-14 (0-indexed) so each army has five clear rows.
+* A phase ends automatically when it has nothing left in it: no steps left (or nowhere to step), no enemy in
+  range, or no troop able to act. The movement phase waits while a Charge could still give a troop more room to
+  move, and the rally phase never ends your turn by itself. Commands work in every phase, so skipping ahead never
+  costs you one.
 
 ## Server (work in progress)
 

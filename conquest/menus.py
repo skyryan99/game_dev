@@ -16,6 +16,9 @@ MAIN_TAB = (48, 32, 10)
 SEC_TAB = (31, 21, 7)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+GOLD = (230, 190, 60)            # squad gold (spent in the loadout)
+COMMAND_POINTS = (110, 170, 255)  # command points (spent in the game)
+GREY = (110, 110, 110)
 
 BORDER = 20
 PADDING = 10
@@ -95,8 +98,10 @@ class LoadoutMenu:
         self.selection_rect = pygame.Rect(self.troops_tab.x, self.troops_tab.bottom, sw - BORDER,
                                           sh - BORDER - self.troops_tab.bottom + PADDING)
         self.troop_count_pos = (self.resource_pos[0] - 240, sh - 200)
+        # The empty 10th command slot (bottom right of the grid) holds the counter and a note about points.
         self.command_count_pos = (troops_size[0] + commands_size[0] + BETWEEN,
-                                  sh - 2 * fonts[4].size("Commands: 0/4")[1])
+                                  sh - fonts[4].get_height() - 30)
+        self.command_note_pos = (self.command_count_pos[0], (170 + 20) * 4 + 20 + 85 + 4)
         self.ready_rect = pygame.Rect(1500, 25, fonts[2].size("READY UP!")[0], 40)
 
         # troop cards: 2 columns x 4 rows (the last slot is empty)
@@ -182,6 +187,13 @@ class LoadoutMenu:
             self._draw_command_bar(screen, mouse_pos)
             screen.blit(fonts[4].render("Commands: %d/%d" % (len(lo.commands), engine.MAX_COMMANDS), True, WHITE),
                         self.command_count_pos)
+            note = ("Commands cost no squad gold. In the game they spend command points: you gain %d at the "
+                    "start of every turn, plus the gold cost of each troop you defeat."
+                    % engine.COMMAND_POINTS_PER_TURN)
+            y = self.command_note_pos[1]
+            for line in _wrap(fonts[1], note, 760):
+                screen.blit(fonts[1].render(line, True, COMMAND_POINTS), (self.command_note_pos[0], y))
+                y += fonts[1].get_height()
 
         if lo.is_ready:
             hovered = self.ready_rect.collidepoint(mouse_pos)
@@ -199,13 +211,19 @@ class LoadoutMenu:
                          (card.name_pos[0] + 300, card.name_pos[1] + 50))
         return color
 
+    def _draw_cost(self, screen, card, text, color):
+        """The price, right-aligned in the card's header row and labelled with its currency."""
+        label = self.fonts[1].render(text, True, color, BLACK)
+        screen.blit(label, (card.outer.right - 16 - label.get_width(), card.outer.y + 16))
+
     def _draw_troop_cards(self, screen, mouse_pos):
         fonts = self.fonts
         for card in self.troop_cards:
             spec = data.TROOPS[card.key]
             color = self._card_frame(screen, card, mouse_pos, self.loadout.can_add_troop(card.key))
             screen.blit(fonts[2].render(spec["name"], True, color, BLACK), card.name_pos)
-            screen.blit(fonts[2].render("Cost: %d" % spec["cost"], True, color, BLACK), card.cost_pos)
+            self._draw_cost(screen, card, "Gold cost: %d" % spec["cost"],
+                            GOLD if self.loadout.can_add_troop(card.key) else GREY)
             stats = ["Movement: %d" % spec["speed"], "Damage: %d" % spec["damage"],
                      "Health: %d" % spec["health"], "Range: %d" % spec["range"]]
             line_h = fonts[1].size("STAT HEIGHT")[1]
@@ -225,7 +243,7 @@ class LoadoutMenu:
             base = row.y
             screen.blit(assets.scaled(spec["icon"], 32 * 2), (inner.x + 25, base + 15))
             screen.blit(fonts[1].render(spec["name"], True, color, BLACK), (inner.x + 32 * 4, base + 10))
-            screen.blit(fonts[1].render("Cost: %d" % spec["cost"], True, color, BLACK), (inner.x + 32 * 10, base + 10))
+            screen.blit(fonts[1].render("Gold cost: %d" % spec["cost"], True, GOLD, BLACK), (inner.x + 32 * 9 + 10, base + 10))
             stats = ["Movement: %d" % spec["speed"], "Damage: %d" % spec["damage"],
                      "Health: %d" % spec["health"], "Range: %d" % spec["range"]]
             for j, stat in enumerate(stats):
@@ -237,8 +255,8 @@ class LoadoutMenu:
             spec = data.COMMANDS[card.key]
             color = self._card_frame(screen, card, mouse_pos, self.loadout.can_add_command(card.key))
             screen.blit(fonts[2].render(spec["name"], True, color, BLACK), card.name_pos)
-            screen.blit(fonts[2].render("Cost: %d" % spec["cost"], True, color, BLACK),
-                        (card.cost_pos[0], card.cost_pos[1] - 20))
+            self._draw_cost(screen, card, "Command point cost: %d" % spec["cost"],
+                            COMMAND_POINTS if self.loadout.can_add_command(card.key) else GREY)
             screen.blit(fonts[2].render("CD: %d" % spec["cooldown"], True, color, BLACK), card.cooldown_pos)
             screen.blit(assets.scaled(spec["icon"], 90), card.img_pos)
             y = card.stats_pos[1] - 12

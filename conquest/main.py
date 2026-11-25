@@ -240,7 +240,7 @@ class App:
             render.draw_highlights(self.fake, self.game, hover, self.cell, self.anchor, scale)
             render.draw_units(self.fake, self.game, self.cell, self.anchor, scale)
             hud.draw(self.fake, self.fonts, self.game, self.mouse, hover, self.controller.armed,
-                     self.controller.message)
+                     self.controller.message, pygame.time.get_ticks() / 1000.0)
             if self.game.winner is not None:
                 render.draw_winner(self.fake, self.fonts, self.game.winner)
         if self.menu_open:
