@@ -3,6 +3,7 @@ import pygame
 
 import assets
 import engine
+import screenconfig
 
 BACKGROUND = (3, 13, 46)            # navy blue
 PLAYER_COLORS = [(70, 130, 255), (230, 70, 70)]
@@ -83,6 +84,10 @@ def draw_winner(screen, fonts, winner):
 
 
 def present(fake_screen, screen):
-    """Stretch the fixed-size drawing surface onto the real (resizable) window."""
-    screen.blit(pygame.transform.scale(fake_screen, screen.get_size()), (0, 0))
+    """Scale the fixed-size drawing surface to fit the real window, centred, keeping its shape.
+    Windows that are not 16:9 get black bars rather than a stretched board."""
+    scale, ox, oy = screenconfig.fit(screen.get_size(), fake_screen.get_size())
+    size = (max(1, int(fake_screen.get_width() * scale)), max(1, int(fake_screen.get_height() * scale)))
+    screen.fill((0, 0, 0))
+    screen.blit(pygame.transform.scale(fake_screen, size), (int(ox), int(oy)))
     pygame.display.update()

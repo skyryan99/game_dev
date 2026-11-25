@@ -6,3 +6,6 @@ venv/
 *~
 .*.un~
 *.swp
+
+# per-machine window settings
+settings.json

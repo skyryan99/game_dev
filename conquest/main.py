@@ -2,11 +2,12 @@
 #
 #   python main.py
 #
-# States:  START -> LOADOUT -> GAME -> (winner overlay) -> START
+# States:  START -> LOADOUT -> GAME -> (winner overlay) -> START      (Esc opens the menu in any state)
 #
-# Everything is drawn onto a fixed 1920x1080 surface ("fake screen") which is then stretched to the
-# real, resizable window, so every coordinate below is in 1920x1080 space. Mouse positions are
-# converted with App.to_fake().
+# Everything is drawn onto a fixed 1920x1080 surface ("fake screen") which is then scaled to fit the
+# real window (letterboxed if it is not 16:9), so every coordinate below is in 1920x1080 space.
+# Mouse positions are converted with App.to_fake(). Window size and fullscreen live in
+# screenconfig.Settings and are applied in App.apply_display().
 import ctypes
 import random
 import sys
@@ -17,13 +18,24 @@ import actions
 import assets
 import engine
 import gameboard
+import gamemenu
 import hud
 import menus
 import render
+import screenconfig
 
-DEFAULT_SIZE = (1920, 1080)
+DEFAULT_SIZE = screenconfig.BASE_SIZE
+SETTINGS_PATH = assets.path("settings.json")
 SCALES = [1, 2, 4]                  # zoom levels
 FPS = 60
+
+
+def desktop_size():
+    """Size of the monitor in pixels (falls back to 1920x1080 if pygame cannot tell us)."""
+    try:
+        return tuple(pygame.display.get_desktop_sizes()[0])
+    except (AttributeError, IndexError, pygame.error):
+        return DEFAULT_SIZE
 
 
 class App:
@@ -31,16 +43,30 @@ class App:
         pygame.display.init()
         pygame.font.init()
         pygame.display.set_caption("Conquest")
-        # Windows only: gives the app its own taskbar icon instead of python's. Must precede set_mode.
         if sys.platform == "win32":
+            # Without this, Windows display scaling (125%, 150%...) makes pygame's window bigger than the
+            # resolution you asked for and fullscreen blurry. Must come before the window exists.
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except (AttributeError, OSError):
+                pass
+            # Gives the app its own taskbar icon instead of python's.
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("skyryan99.conquest")
-        self.screen = pygame.display.set_mode(DEFAULT_SIZE, pygame.RESIZABLE)
+        self.settings = screenconfig.load(SETTINGS_PATH)
+        self.desktop = desktop_size()
+        self.resolutions = screenconfig.available_resolutions(self.desktop)
+        self.settings.width, self.settings.height = screenconfig.fit_to_desktop(
+            self.settings.size, self.desktop, self.resolutions)
+        self.screen = None
+        self.apply_display()
         pygame.display.set_icon(assets.image("conquest_icon.png"))
         self.fake = pygame.Surface(DEFAULT_SIZE)
         self.clock = pygame.time.Clock()
         font = assets.font_path("Montserrat-Regular.ttf")
         # small, medium, large, extra large and huge
         self.fonts = [pygame.font.Font(font, size) for size in (12, 20, 32, 52, 72)]
+        self.game_menu = gamemenu.GameMenu(self.fonts)
+        self.menu_open = False
 
         self.state = "START"
         self.mouse = (0, 0)                 # always in fake-screen coordinates
@@ -58,11 +84,52 @@ class App:
     # ---- helpers
 
     def to_fake(self, pos):
-        w, h = self.screen.get_size()
-        return pos[0] * DEFAULT_SIZE[0] / w, pos[1] * DEFAULT_SIZE[1] / h
+        return screenconfig.window_to_base(pos, self.screen.get_size(), DEFAULT_SIZE)
+
+    def apply_display(self):
+        """(Re)create the window from self.settings. Fullscreen always uses the desktop resolution."""
+        if self.settings.fullscreen:
+            self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        else:
+            self.screen = pygame.display.set_mode(self.settings.size, pygame.RESIZABLE)
+
+    def menu_state(self):
+        """What the ESC menu needs to know: can the resolution arrows still go anywhere?"""
+        windowed = not self.settings.fullscreen
+        cur = self.settings.size
+        can_prev = windowed and screenconfig.step_resolution(cur, -1, self.resolutions) != cur
+        can_next = windowed and screenconfig.step_resolution(cur, 1, self.resolutions) != cur
+        return can_prev, can_next
+
+    def apply_menu_action(self, action):
+        if action == "resume":
+            self.menu_open = False
+        elif action == "fullscreen":
+            self.settings.fullscreen = not self.settings.fullscreen
+            self.apply_display()
+        elif action in ("prev", "next"):
+            new = screenconfig.step_resolution(self.settings.size, -1 if action == "prev" else 1, self.resolutions)
+            self.settings.width, self.settings.height = new
+            self.apply_display()
+        screenconfig.save(self.settings, SETTINGS_PATH)
+
+    def on_escape(self):
+        """In a game, Esc first backs out of a half-finished action (a command waiting for its target).
+        With nothing to cancel, or anywhere else, it opens or closes the menu."""
+        if self.state == "GAME" and not self.menu_open and self.controller.armed:
+            self.controller.cancel()
+        else:
+            self.toggle_menu()
+
+    def toggle_menu(self):
+        self.menu_open = not self.menu_open
+        if self.menu_open:
+            self.dragging = False
+            if self.state == "GAME":
+                self.controller.cancel()
 
     def hover_unit(self):
-        if self.state != "GAME" or self.mouse[0] >= hud.panel_x(self.fake):
+        if self.state != "GAME" or self.menu_open or self.mouse[0] >= hud.panel_x(self.fake):
             return None
         tile = gameboard.tile_at(self.mouse, self.anchor, self.cell, SCALES[self.scale_idx])
         return self.game.unit_at(*tile) if tile else None
@@ -84,12 +151,15 @@ class App:
 
     def handle_event(self, event):
         if event.type == pygame.QUIT:
+            screenconfig.save(self.settings, SETTINGS_PATH)
             pygame.quit()
             sys.exit(0)
         elif event.type == pygame.VIDEORESIZE:
-            width = max(640, event.size[0])
-            self.screen = pygame.display.set_mode((width, int(width * DEFAULT_SIZE[1] / DEFAULT_SIZE[0])),
-                                                  pygame.RESIZABLE)
+            # The player dragged the window edge. The canvas just rescales (letterboxed), so all we do is
+            # remember the new size for next launch.
+            self.screen = pygame.display.get_surface()
+            if not self.settings.fullscreen:
+                self.settings.width, self.settings.height = self.screen.get_size()
         elif event.type == pygame.MOUSEMOTION:
             self.mouse = self.to_fake(event.pos)
             if self.dragging:
@@ -102,15 +172,22 @@ class App:
             if event.button == 2:
                 self.dragging = False
         elif event.type == pygame.MOUSEWHEEL:
-            if self.state == "GAME":
+            if self.state == "GAME" and not self.menu_open:
                 self.zoom(event.y)
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE and self.state == "GAME":
-                self.controller.cancel()
+            if event.key == pygame.K_ESCAPE:
+                self.on_escape()
+            elif self.menu_open:
+                pass
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and self.state == "GAME" and self.game.winner is not None:
                 self.state = "START"
 
     def on_mouse_down(self, button):
+        if self.menu_open:                      # the menu swallows every click while it is up
+            if button == 1:
+                can_prev, can_next = self.menu_state()
+                self.apply_menu_action(self.game_menu.handle_click(self.mouse, can_prev, can_next))
+            return
         if self.state == "START":
             if button == 1 and self.start_rect.collidepoint(self.mouse):
                 self.new_menu()
@@ -166,6 +243,9 @@ class App:
                      self.controller.message)
             if self.game.winner is not None:
                 render.draw_winner(self.fake, self.fonts, self.game.winner)
+        if self.menu_open:
+            can_prev, can_next = self.menu_state()
+            self.game_menu.draw(self.fake, self.mouse, self.settings, can_prev, can_next)
         render.present(self.fake, self.screen)
 
     def run(self):
