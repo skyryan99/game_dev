@@ -1,4 +1,4 @@
-# The rules of Conquest, with no pygame in sight.
+# The rukes of conquest
 #
 # Everything the UI, the server and the tests need to know about game state
 # lives in `Game`. The UI only ever *reads* from it (to draw) and *calls its
