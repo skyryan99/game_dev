@@ -1,12 +1,12 @@
 # The rukes of conquest
 #
 # Everything the UI, the server and the tests need to know about game state
-# lives in `Game`. The UI only ever *reads* from it (to draw) and *calls its
-# methods* (to act). Illegal actions raise `IllegalAction` and never change
+# lives in `Game`. The UI only ever reads from it to draw and calls its
+# methods to act. Illegal actions raise `IllegalAction` and don't change
 # state, so a server can feed untrusted client messages straight to
 # `Game.apply_action`.
 #
-# Rule assumptions where the wiki is silent (change them here in one place):
+# Rule assumptions:
 #   * movement is 4-directional (no diagonals) and cannot pass through units or obstacles
 #   * range is Manhattan distance
 #   * a defender retaliates only if the attacker is inside the defender's range
