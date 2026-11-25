@@ -50,9 +50,9 @@ def draw_highlights(screen, game, hover_unit, cell, anchor, scale):
             x, y, size = _tile_xy(tile, cell, anchor, scale)
             screen.blit(_overlay(size, (60, 120, 255, 90)), (x, y))
     if game.selected_unit is None or not game.has_attacked:
-        for target in game.attack_targets(unit):
+        for target in game.attack_targets(unit):             # an outline, not a fill: troops' squares keep their colour
             x, y, size = _tile_xy(target.pos, cell, anchor, scale)
-            screen.blit(_overlay(size, (255, 60, 60, 120)), (x, y))
+            pygame.draw.rect(screen, (255, 70, 70), (x, y, size, size), width=max(3, size // 12))
     if game.selected_unit is not None:
         x, y, size = _tile_xy(unit.pos, cell, anchor, scale)
         pygame.draw.rect(screen, (255, 235, 90), (x, y, size, size), width=max(2, size // 12))
@@ -63,7 +63,6 @@ def draw_units(screen, game, cell, anchor, scale):
         x, y, size = _tile_xy(unit.pos, cell, anchor, scale)
         pygame.draw.rect(screen, PLAYER_COLORS[unit.owner], (x + 2, y + 2, size - 4, size - 4),
                          width=max(2, size // 16))
-        screen.blit(_overlay(size - 8, (0, 0, 0, 95)), (x + 4, y + 4))      # dark backing keeps the icon legible on wood
         icon = assets.scaled(unit.stats["icon"], int(size * 0.6))
         screen.blit(icon, (x + (size - icon.get_width()) // 2, y + (size - icon.get_height()) // 2))
         # health bar along the bottom of the tile

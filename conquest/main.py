@@ -140,7 +140,7 @@ class App:
     def start_game(self):
         # Hot-seat for now: player 2 gets a copy of player 1's squad until online play is hooked up.
         loadouts = [self.menu.loadout, engine.Loadout.from_dict(self.menu.loadout.to_dict())]
-        self.game = engine.Game.new(loadouts, rng=random.Random())
+        self.game = engine.Game.new(loadouts, rng=random.Random(), turn_limit=self.menu.turn_limit)
         self.controller = actions.Controller(self.game)
         self.boards = [gameboard.create_board(self.cell * s, self.game.obstacles) for s in SCALES]
         self.scale_idx = 0
@@ -248,12 +248,23 @@ class App:
             self.game_menu.draw(self.fake, self.mouse, self.settings, can_prev, can_next)
         render.present(self.fake, self.screen)
 
+    def update(self, dt):
+        """Advance the turn clock by one frame. It stands still while the menu is open."""
+        if self.state != "GAME" or self.game.winner is not None:
+            return
+        if self.menu_open:
+            self.game.pause_for(dt)
+        elif self.game.tick():                  # time ran out: the turn changed hands underneath the player
+            self.controller.cancel()
+
     def run(self):
+        dt = 0.0
         while True:
             for event in pygame.event.get():
                 self.handle_event(event)
+            self.update(dt)
             self.draw()
-            self.clock.tick(FPS)
+            dt = self.clock.tick(FPS) / 1000.0
 
 
 if __name__ == "__main__":

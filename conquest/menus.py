@@ -26,6 +26,56 @@ BETWEEN = 50
 BORDER_WIDTH = 2
 
 
+class Dropdown:
+    """A small drop-down list. `options` is [(label, value)]. Any click while it is open picks the option
+    under the mouse (if any) and closes it, and is swallowed so it does not also hit what is underneath."""
+
+    def __init__(self, rect, options, index):
+        self.rect, self.options, self.index, self.open = rect, options, index, False
+
+    @property
+    def value(self):
+        return self.options[self.index][1]
+
+    def option_rect(self, i):
+        return pygame.Rect(self.rect.x, self.rect.bottom + 2 + i * self.rect.height, self.rect.width, self.rect.height)
+
+    def handle_click(self, pos):
+        """Returns True when the click belonged to the dropdown."""
+        if self.open:
+            for i in range(len(self.options)):
+                if self.option_rect(i).collidepoint(pos):
+                    self.index = i
+            self.open = False
+            return True
+        if self.rect.collidepoint(pos):
+            self.open = True
+            return True
+        return False
+
+    def draw(self, screen, fonts, mouse_pos):
+        hot = self.rect.collidepoint(mouse_pos) or self.open
+        color = LIGHT_BROWN if hot else WHITE
+        pygame.draw.rect(screen, BLACK, self.rect)
+        pygame.draw.rect(screen, color, self.rect, width=2)
+        label = fonts[2].render(self.options[self.index][0], True, color)
+        screen.blit(label, (self.rect.x + 14, self.rect.centery - label.get_height() // 2))
+        cx, cy = self.rect.right - 22, self.rect.centery            # a little down-pointing triangle
+        pygame.draw.polygon(screen, color, [(cx - 8, cy - 4), (cx + 8, cy - 4), (cx, cy + 6)])
+        if self.open:
+            for i, (text, _) in enumerate(self.options):
+                row = self.option_rect(i)
+                over = row.collidepoint(mouse_pos)
+                pygame.draw.rect(screen, MAIN_TAB if over else BLACK, row)
+                pygame.draw.rect(screen, LIGHT_BROWN if over else WHITE, row, width=2)
+                screen.blit(fonts[2].render(text, True, LIGHT_BROWN if over else WHITE),
+                            (row.x + 14, row.centery - fonts[2].get_height() // 2))
+
+
+def turn_limit_label(limit):
+    return "\u221e" if limit is None else "%ds" % limit
+
+
 class Card:
     """One big clickable rectangle (a troop or a command) plus the spots things are drawn at."""
 
@@ -103,6 +153,12 @@ class LoadoutMenu:
                                   sh - fonts[4].get_height() - 30)
         self.command_note_pos = (self.command_count_pos[0], (170 + 20) * 4 + 20 + 85 + 4)
         self.ready_rect = pygame.Rect(1500, 25, fonts[2].size("READY UP!")[0], 40)
+        # turn timer setting: a label and a drop-down in the header, between "Squad Gold" and READY UP
+        self.timer_label_pos = (1235, 38)
+        self.turn_dropdown = Dropdown(
+            pygame.Rect(1355, 27, 120, 44),
+            [(turn_limit_label(limit), limit) for limit in engine.TURN_LIMITS],
+            engine.TURN_LIMITS.index(engine.DEFAULT_TURN_LIMIT))
 
         # troop cards: 2 columns x 4 rows (the last slot is empty)
         self.troop_cards = [Card(row, col, 550, 200, 40, data.TROOP_ORDER[col * 4 + row])
@@ -125,11 +181,18 @@ class LoadoutMenu:
         inner = self.command_bar_inner
         return pygame.Rect(inner.x, inner.y + 230 * i + 15, inner.width, 215)
 
+    @property
+    def turn_limit(self):
+        """Seconds each turn may last, or None for no limit."""
+        return self.turn_dropdown.value
+
     # ---- input
 
     def handle_click(self, pos):
         """React to one left click. Returns "GAME" when the player readies up, else None."""
         lo = self.loadout
+        if self.turn_dropdown.handle_click(pos):
+            return None
         if self.troops_tab.collidepoint(pos):
             self.tab = "troops"
         elif self.commands_tab.collidepoint(pos):
@@ -199,6 +262,8 @@ class LoadoutMenu:
             hovered = self.ready_rect.collidepoint(mouse_pos)
             screen.fill(SEC_TAB, self.ready_rect)
             screen.blit(fonts[2].render("READY UP!", True, LIGHT_BROWN if hovered else WHITE), self.ready_rect.topleft)
+        screen.blit(fonts[1].render("Turn timer", True, LIGHT_BROWN), self.timer_label_pos)
+        self.turn_dropdown.draw(screen, fonts, mouse_pos)          # last, so its list opens over the cards
 
     def _card_frame(self, screen, card, mouse_pos, enabled):
         hovered = card.outer.collidepoint(mouse_pos)

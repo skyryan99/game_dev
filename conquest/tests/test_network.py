@@ -23,9 +23,11 @@ def wait_for(net, kind, timeout=3.0):
     raise AssertionError("never got %r, saw %r" % (kind, seen))
 
 
-class NetworkTests(unittest.TestCase):
+class ServerTestCase(unittest.TestCase):
+    turn_limit = 60
+
     def setUp(self):
-        self.server = GameServer("127.0.0.1", 0)
+        self.server = GameServer("127.0.0.1", 0, self.turn_limit)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.clients = []
 
@@ -49,6 +51,9 @@ class NetworkTests(unittest.TestCase):
         b.send({"type": "ready", "loadout": loadout})
         return a, b, wait_for(a, "state")["state"], wait_for(b, "state")["state"]
 
+
+
+class NetworkTests(ServerTestCase):
     def test_match_starts_and_both_players_see_the_same_board(self):
         a, b, sa, sb = self.start_match()
         self.assertEqual(sa, sb)
@@ -93,6 +98,25 @@ class NetworkTests(unittest.TestCase):
         a, b, _, _ = self.start_match()
         a.close()
         self.assertEqual(wait_for(b, "state")["state"]["winner"], 1)
+
+
+class TurnTimerNetworkTests(ServerTestCase):
+    turn_limit = 0.4                    # the server accepts any positive limit; the menu offers 10/30/60/180/inf
+
+    def test_server_ends_a_turn_that_runs_out_of_time(self):
+        a, b, state, _ = self.start_match()
+        self.assertEqual((state["current"], state["turn_limit"]), (0, 0.4))
+        for client in (a, b):                                   # nobody touches anything
+            new = wait_for(client, "state", timeout=3)["state"]
+            self.assertEqual(new["current"], 1)
+            self.assertTrue(any("Time is up" in line for line in new["log"]))
+
+    def test_no_limit_means_the_server_never_ends_the_turn(self):
+        self.server.room.turn_limit = None
+        a, b, state, _ = self.start_match()
+        self.assertIsNone(state["turn_limit"])
+        time.sleep(0.6)
+        self.assertEqual(a.poll(), [])                          # no new state arrived: the turn is still player 1's
 
 
 class ProtocolTests(unittest.TestCase):

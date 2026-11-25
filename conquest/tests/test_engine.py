@@ -10,9 +10,12 @@ import engine
 from engine import Game, IllegalAction, Loadout
 
 
-def make_game(p0_troops, p1_troops, p0_cmds=(), p1_cmds=(), obstacles=()):
-    """A game with explicit positions: troops are (kind, row, col). Player 0 moves first."""
-    g = Game()
+def make_game(p0_troops, p1_troops, p0_cmds=(), p1_cmds=(), obstacles=(), points=None, clock=None):
+    """A game with explicit positions: troops are (kind, row, col). Player 0 moves first.
+    `points` sets both players' command points. Note the rally phase now ends the turn when no command can
+    be used, so tests that want to stand in the rally phase give the player a usable command
+    (KEEP_ALIVE is a cheap one) and enough points for it."""
+    g = Game(clock)
     g.obstacles = set(obstacles)
     for player, troops in ((0, p0_troops), (1, p1_troops)):
         for kind, r, c in troops:
@@ -20,7 +23,12 @@ def make_game(p0_troops, p1_troops, p0_cmds=(), p1_cmds=(), obstacles=()):
     g.commands = [list(p0_cmds), list(p1_cmds)]
     g.cooldowns = [{c: 0 for c in p0_cmds}, {c: 0 for c in p1_cmds}]
     g._start_turn(0)
+    if points is not None:
+        g.command_points = [points, points]
     return g
+
+
+KEEP_ALIVE = "vigilance"        # 50 points, any troop of yours that does not have it yet
 
 
 def uid_at(g, r, c):
@@ -165,7 +173,7 @@ class CombatTests(unittest.TestCase):
         self.assertEqual(g.winner, 0)
 
     def test_retaliation_when_defender_survives(self):
-        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)])
+        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 10, 5))
         g.attack(uid_at(g, 9, 5))
         self.assertEqual(g.unit_at(9, 5).health, 200)
@@ -199,12 +207,12 @@ class CombatTests(unittest.TestCase):
             g.attack(uid_at(g, 9, 5))
 
     def test_attacker_killed_by_retaliation(self):
-        g = make_game([("scout", 10, 5), ("scout", 17, 0)], [("champion", 9, 5), ("scout", 0, 0)])
+        g = make_game([("scout", 10, 5), ("scout", 17, 0)], [("champion", 9, 5), ("scout", 0, 0)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 10, 5))
         g.attack(uid_at(g, 9, 5))
         self.assertIsNone(g.unit_at(10, 5))
         self.assertIsNone(g.selected)
-        self.assertEqual(g.command_points[1], 25)        # the defender is credited with the scout's cost
+        self.assertEqual(g.command_points[1], 500 + 25)  # the defender is credited with the scout's cost
 
     def test_kill_credits_command_points(self):
         g = make_game([("knight", 10, 5)], [("scout", 9, 5), ("scout", 0, 0)])
@@ -403,7 +411,7 @@ class CommandTests(unittest.TestCase):
 
     def test_chastise_blocks_selection_but_not_retaliation(self):
         g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)],
-                      p0_cmds=["chastise"])
+                      p0_cmds=["chastise", KEEP_ALIVE])
         self.give_points(g, 0)
         victim = uid_at(g, 9, 5)
         g.use_command("chastise", victim)
@@ -447,7 +455,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(g2.moves_left, 3 + 6)
 
     def test_charge_not_allowed_after_movement_and_wears_off(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 0)], p0_cmds=["charge"])
+        g = make_game([("scout", 17, 5)], [("scout", 0, 0)], p0_cmds=["charge", KEEP_ALIVE])
         self.give_points(g, 0)
         g.select_unit(uid_at(g, 17, 5))
         g.end_phase()                                        # -> COMBAT
@@ -490,7 +498,7 @@ class CommandTests(unittest.TestCase):
 class TurnFlowTests(unittest.TestCase):
     def test_phases_advance_and_turn_passes(self):
         # an enemy within reach keeps the combat phase alive, so every phase is visible
-        g = make_game([("scout", 17, 5)], [("scout", 16, 5), ("scout", 0, 5)])
+        g = make_game([("scout", 17, 5)], [("scout", 16, 5), ("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
         self.assertEqual(g.phase, engine.SELECTION)
         g.select_unit(uid_at(g, 17, 5))
         self.assertEqual(g.phase, engine.MOVEMENT)
@@ -504,7 +512,7 @@ class TurnFlowTests(unittest.TestCase):
         self.assertIsNone(g.selected)
 
     def test_skip_selection_goes_to_rally(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
         g.end_phase()
         self.assertEqual(g.phase, engine.RALLY)
 
@@ -533,13 +541,13 @@ class AutoAdvanceTests(unittest.TestCase):
         self.assertEqual(g.phase, engine.COMBAT)
 
     def test_combat_is_skipped_when_nothing_is_in_range(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 17, 5))
         g.move_unit(11, 5)                                   # all 6 steps, nobody near
         self.assertEqual(g.phase, engine.RALLY)
 
     def test_ending_movement_early_also_skips_an_empty_combat(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 17, 5))
         g.end_phase()
         self.assertEqual(g.phase, engine.RALLY)
@@ -551,7 +559,7 @@ class AutoAdvanceTests(unittest.TestCase):
         self.assertEqual(g.phase, engine.COMBAT)
 
     def test_a_boxed_in_troop_skips_movement_straight_away(self):
-        g = make_game([("scout", 10, 5)], [("scout", 0, 0)], obstacles=[(9, 5), (11, 5), (10, 4), (10, 6)])
+        g = make_game([("scout", 10, 5)], [("scout", 0, 0)], obstacles=[(9, 5), (11, 5), (10, 4), (10, 6)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 10, 5))
         self.assertEqual(g.phase, engine.RALLY)              # no way out, nobody to hit
 
@@ -572,18 +580,55 @@ class AutoAdvanceTests(unittest.TestCase):
             g.command_points[0] = 0                          # no command points either way
             g.select_unit(uid_at(g, 17, 5))
             g.move_unit(11, 5)
-            self.assertEqual(g.phase, engine.RALLY, kwargs)
+            # nothing left to wait for: movement and combat were skipped, and with no usable command the turn passed
+            self.assertEqual(g.current, 1, kwargs)
 
-    def test_rally_never_ends_the_turn_by_itself(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+    def test_rally_waits_while_a_command_is_usable(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 17, 5))
         g.move_unit(11, 5)
         self.assertEqual((g.phase, g.current), (engine.RALLY, 0))
         g.end_phase()
         self.assertEqual(g.current, 1)
 
+    def test_rally_ends_the_turn_when_there_is_no_command_to_use(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])           # a squad with no commands at all
+        g.select_unit(uid_at(g, 17, 5))
+        g.move_unit(11, 5)
+        self.assertEqual((g.current, g.phase), (1, engine.SELECTION))
+        self.assertTrue(any("No command" in line for line in g.log))
+
+    def test_each_reason_a_command_can_be_unavailable(self):
+        for name, build in {
+            "not enough points": lambda: make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=["bombard"], points=100),
+            "on cooldown": lambda: make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500),
+            "charge cannot be used in rally": lambda: make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=["charge"], points=500),
+            "nobody is damaged": lambda: make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=["regenerate"], points=500),
+            "only one enemy troop to chastise": lambda: make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=["chastise"], points=500),
+            "winds of fate with nothing cooling down": lambda: make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=["winds_of_fate"], points=500),
+        }.items():
+            g = build()
+            if name == "on cooldown":
+                g.cooldowns[0][KEEP_ALIVE] = 3
+            g.select_unit(uid_at(g, 17, 5))
+            g.end_phase()                                    # movement -> (empty combat) -> rally -> nothing to use
+            self.assertEqual(g.current, 1, name)
+
+    def test_buffs_already_on_every_troop_leave_nothing_to_use(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
+        g.units_of(0)[0].effects[KEEP_ALIVE] = 0
+        g.select_unit(uid_at(g, 17, 5)); g.end_phase()
+        self.assertEqual(g.current, 1)
+
+    def test_using_the_last_available_command_in_rally_ends_the_turn(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], points=500)
+        g.end_phase()                                        # skip selection -> rally, command still usable
+        self.assertEqual((g.current, g.phase), (0, engine.RALLY))
+        g.use_command(KEEP_ALIVE, uid_at(g, 17, 5))
+        self.assertEqual(g.current, 1)
+
     def test_selection_is_skipped_when_every_troop_is_chastised(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5), ("scout", 0, 8)])
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5), ("scout", 0, 8)], p1_cmds=[KEEP_ALIVE], points=500)
         for unit in g.units_of(1):
             unit.effects["chastise"] = 0                     # cast by player 0
         g.end_turn()                                         # player 1: nobody can act
@@ -592,22 +637,124 @@ class AutoAdvanceTests(unittest.TestCase):
         self.assertEqual(g.phase, engine.SELECTION)
 
     def test_attacking_still_goes_straight_to_rally(self):
-        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)])
+        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)], p0_cmds=[KEEP_ALIVE], points=500)
         g.select_unit(uid_at(g, 10, 5))
         g.attack(uid_at(g, 9, 5))
         self.assertEqual(g.phase, engine.RALLY)
+
+
+class FakeClock:
+    def __init__(self): self.now = 1000.0
+    def __call__(self): return self.now
+    def advance(self, seconds): self.now += seconds
+
+
+def timed_game(limit, clock, **kw):
+    g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], p1_cmds=[KEEP_ALIVE], points=500,
+                  clock=clock, **kw)
+    g.turn_limit = limit
+    g.turn_started = clock()
+    return g
+
+
+class TurnTimerTests(unittest.TestCase):
+    def test_turn_ends_when_time_runs_out(self):
+        clock = FakeClock(); g = timed_game(60, clock)
+        self.assertEqual(g.time_left(), 60)
+        clock.advance(59.9)
+        self.assertFalse(g.tick()); self.assertEqual(g.current, 0)
+        clock.advance(0.2)
+        self.assertTrue(g.tick())
+        self.assertEqual((g.current, g.phase), (1, engine.SELECTION))
+        self.assertEqual(g.time_left(), 60)                      # the next player starts with a full clock
+        self.assertTrue(any("Time is up" in line for line in g.log))
+
+    def test_time_runs_out_mid_action_and_drops_the_selection(self):
+        clock = FakeClock(); g = timed_game(30, clock)
+        g.select_unit(uid_at(g, 17, 5))
+        clock.advance(31); g.tick()
+        self.assertEqual(g.current, 1)
+        self.assertIsNone(g.selected)
+
+    def test_no_limit_never_times_out(self):
+        clock = FakeClock(); g = timed_game(None, clock)
+        self.assertIsNone(g.time_left())
+        clock.advance(10 ** 6)
+        self.assertFalse(g.tick()); self.assertEqual(g.current, 0)
+
+    def test_ending_a_turn_early_resets_the_clock_for_the_next_player(self):
+        clock = FakeClock(); g = timed_game(60, clock)
+        clock.advance(45); g.end_turn()
+        self.assertEqual(g.time_left(), 60)
+        clock.advance(10); self.assertEqual(g.time_left(), 50)
+
+    def test_pausing_gives_the_time_back(self):
+        clock = FakeClock(); g = timed_game(60, clock)
+        clock.advance(20)
+        g.pause_for(15)                                          # a menu was open for 15 s
+        self.assertEqual(g.time_left(), 55)
+
+    def test_no_clock_after_the_game_is_over(self):
+        clock = FakeClock(); g = timed_game(60, clock)
+        g.resign(0)
+        self.assertIsNone(g.time_left())
+        clock.advance(500); self.assertFalse(g.tick())
+
+    def test_new_game_takes_a_limit_and_rejects_nonsense(self):
+        lo = Loadout(troops=["scout"])
+        for limit in engine.TURN_LIMITS:
+            self.assertEqual(Game.new([lo, Loadout(troops=["scout"])], turn_limit=limit).turn_limit, limit)
+        self.assertEqual(Game.new([lo, Loadout(troops=["scout"])]).turn_limit, engine.DEFAULT_TURN_LIMIT)
+        for bad in (0, -5):
+            with self.assertRaises(IllegalAction):
+                Game.new([lo, Loadout(troops=["scout"])], turn_limit=bad)
+
+    def test_snapshot_carries_time_left_not_a_machine_specific_timestamp(self):
+        clock = FakeClock(); g = timed_game(60, clock)
+        clock.advance(25)
+        snapshot = g.to_dict()
+        self.assertEqual((snapshot["turn_limit"], snapshot["time_left"]), (60, 35))
+        other = FakeClock(); other.now = 5.0                    # a different machine with a different clock
+        copy = Game.from_dict(snapshot, clock=other)
+        self.assertEqual(copy.time_left(), 35)
+        other.advance(10); self.assertEqual(copy.time_left(), 25)
+
+
+class LogTests(unittest.TestCase):
+    def test_recent_log_covers_the_last_three_turns(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], p1_cmds=[KEEP_ALIVE], points=500)
+        for _ in range(5):
+            g.end_turn()                                         # turns 2..6
+        shown = g.recent_log()
+        headers = [line for line in shown if line.startswith("Turn ")]
+        self.assertEqual(len(headers), 3)
+        self.assertTrue(headers[-1].startswith("Turn 6"))
+        self.assertTrue(headers[0].startswith("Turn 4"))
+
+    def test_recent_log_with_fewer_turns_shows_everything(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        self.assertEqual(g.recent_log(), g.log)
+
+    def test_events_stay_with_their_turn(self):
+        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)],
+                      p0_cmds=[KEEP_ALIVE], p1_cmds=[KEEP_ALIVE], points=500)
+        g.select_unit(uid_at(g, 10, 5)); g.attack(uid_at(g, 9, 5))
+        for _ in range(3):
+            g.end_turn()
+        shown = g.recent_log()
+        self.assertFalse(any("hits" in line for line in shown))   # the attack happened more than 3 turns ago
 
 
 class SerialisationTests(unittest.TestCase):
     def test_round_trip_through_json(self):
         import json
         lo = Loadout(troops=["scout", "knight", "archer"], commands=["charge", "battle_cry"])
-        g = Game.new([lo, Loadout.from_dict(lo.to_dict())], rng=random.Random(7))
+        g = Game.new([lo, Loadout.from_dict(lo.to_dict())], rng=random.Random(7), clock=lambda: 100.0)
         g.command_points[0] = 500
         g.use_command("battle_cry", g.units_of(0)[0].uid)
         g.select_unit(g.units_of(0)[1].uid)
         snapshot = json.loads(json.dumps(g.to_dict()))
-        self.assertEqual(Game.from_dict(snapshot).to_dict(), g.to_dict())
+        self.assertEqual(Game.from_dict(snapshot, clock=lambda: 100.0).to_dict(), g.to_dict())
 
     def test_apply_action_enforces_turn_and_types(self):
         g = make_game([("scout", 17, 5)], [("scout", 0, 5)])

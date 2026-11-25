@@ -44,8 +44,12 @@ the same call the server makes for each client message, so illegal moves are rej
 ## Controls
 
 * Left click a troop to select it, a blue tile to move, a red-highlighted enemy to attack.
-* The side panel has one button per phase (Selection, Movement, Combat, Rally). The current phase's button circles
-  with a golden glow; click it to end that phase. Phases also end by themselves when nothing is left to do.
+* The side panel has a **Phases** section (one button per phase, End Turn, Resign) and a **Commands** section.
+  The current phase's button circles with a golden glow; click it to end that phase. Phases also end by
+  themselves when nothing is left to do.
+* Each turn has a time limit, picked in the loadout menu (10s / 30s / 60s / 180s / unlimited). The countdown is at
+  the top right of the side panel and the turn ends by itself when it reaches zero. It pauses while Esc's menu is open.
+* The panel's bottom box is a fixed-size log of the last three turns.
 * Side panel: End Phase, End Turn, Resign, and your commands (click a command, then click its target).
 * Right click cancels a pending command. Mouse wheel zooms, middle-drag pans.
 * **Esc** cancels a pending command in a game; with nothing to cancel (and on every other screen) it opens the menu:
@@ -68,13 +72,15 @@ The wiki does not say, so these are assumptions (all in one place at the top of 
 * Obstacles live in rows 5-14 (0-indexed) so each army has five clear rows.
 * A phase ends automatically when it has nothing left in it: no steps left (or nowhere to step), no enemy in
   range, or no troop able to act. The movement phase waits while a Charge could still give a troop more room to
-  move, and the rally phase never ends your turn by itself. Commands work in every phase, so skipping ahead never
+  move. When you reach the rally phase with no command you could use (none ready, too few command points, no sensible
+  target), the rally phase and your turn end automatically. Commands work in every phase, so skipping ahead never
   costs you one.
 
 ## Server (work in progress)
 
 ```
 python server.py                      # terminal 1 (listens on port 5555)
+python server.py --turn-limit 30      # optional: 10, 30, 60, 180 or inf seconds per turn (default 60)
 set CONQUEST_HOST=192.168.1.100       # on the other machine, point the client at the server
 ```
 

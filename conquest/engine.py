@@ -18,8 +18,12 @@
 #   * phases end by themselves when there is nothing left to do in them (no movement left, no target in
 #     range, nobody able to act). Commands work in any phase, so skipping ahead never costs you one --
 #     except Charge, so the movement phase waits while a Charge could still help. The rally phase never
-#     ends by itself, because ending your turn is always your call
+#     ends by itself while you still have a command you could use. When none is usable, the rally phase
+#     (and so the turn) ends on its own
+#   * each turn has a time limit (a menu choice: 10s / 30s / 60s / 180s / unlimited); when it runs out the
+#     turn ends wherever it was
 import random
+import time
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -29,6 +33,9 @@ BOARD_SIZE = 20
 MAX_TROOPS = 10
 MAX_COMMANDS = 4
 STARTING_GOLD = 1000
+TURN_LIMITS = (10, 30, 60, 180, None)    # seconds per turn offered in the menu; None = no limit
+DEFAULT_TURN_LIMIT = 60
+LOG_TURNS_SHOWN = 3
 COMMANDS_COST_GOLD = False          # the wiki is ambiguous; the original code only charged for troops
 COMMAND_POINTS_PER_TURN = 25
 STARTING_COMMAND_POINTS = 0
@@ -254,7 +261,10 @@ class Unit:
 # ----------------------------------------------------------------- game -----
 
 class Game:
-    def __init__(self):
+    def __init__(self, clock=None):
+        self._clock = clock or time.monotonic       # injectable so tests (and the server) control time
+        self.turn_limit = None          # seconds each turn may last, or None for no limit
+        self.turn_started = self._clock()
         self.units = {}                 # uid -> Unit
         self.obstacles = set()
         self.commands = [[], []]        # command keys each player brought
@@ -273,11 +283,16 @@ class Game:
     # ---- construction
 
     @classmethod
-    def new(cls, loadouts, formations=None, obstacles=None, rng=None):
+    def new(cls, loadouts, formations=None, obstacles=None, rng=None,
+            turn_limit=DEFAULT_TURN_LIMIT, clock=None):
         """Start a game. `loadouts` is [Loadout, Loadout]; `formations` is an optional
-        [[(row, col)...], [(row, col)...]] aligned with each loadout's troop order."""
+        [[(row, col)...], [(row, col)...]] aligned with each loadout's troop order.
+        `turn_limit` is seconds per turn (None for no limit)."""
+        if turn_limit is not None and not turn_limit > 0:
+            raise IllegalAction("the turn limit must be positive, or None for no limit")
         rng = rng or random.Random()
-        game = cls()
+        game = cls(clock)
+        game.turn_limit = turn_limit
         game.obstacles = set(obstacles) if obstacles is not None else generate_obstacles(rng)
         for player in (0, 1):
             loadout = loadouts[player]
@@ -383,6 +398,7 @@ class Game:
     def _start_turn(self, player):
         self.current = player
         self.turn_number += 1
+        self.turn_started = self._clock()
         self.phase = SELECTION
         self.selected = None
         self.moves_left = 0
@@ -479,6 +495,7 @@ class Game:
             self.selected = None
         if self.winner is None:
             self.phase = RALLY
+            self._auto_advance()
 
     def use_command(self, key, target_uid=None):
         self._require_live()
@@ -521,6 +538,7 @@ class Game:
         self.command_points[player] -= spec["cost"]
         self.cooldowns[player][key] = spec["cooldown"]
         self._log("Player %d used %s" % (player + 1, spec["name"]))
+        self._auto_advance()
 
     # ---- automatic phase skipping
 
@@ -550,8 +568,59 @@ class Game:
                     or not self.attack_targets(self.selected_unit)):
                 self.phase = RALLY
                 self._log("Combat skipped: no target in range")
+            elif self.phase == RALLY and not self._any_command_available():
+                self._log("No command to use: turn ended")
+                self.end_turn()
+                return
             else:
                 return
+
+    def _command_available(self, key):
+        """Could the current player use this command right now on at least one sensible target?"""
+        if self.command_status(self.current, key) is not None:
+            return False
+        spec = data.COMMANDS[key]
+        if spec["target"] == "none":
+            return True
+        if spec["target"] == "ally":
+            allies = self.units_of(self.current)
+            if key == "regenerate":
+                return any(u.health < u.max_health for u in allies)
+            return any(key not in u.effects for u in allies)     # buffs cannot be stacked on a troop
+        enemies = self.units_of(1 - self.current)
+        if key == "chastise":
+            return len(enemies) > 1                              # never the last remaining troop
+        return bool(enemies)
+
+    def _any_command_available(self):
+        return any(self._command_available(key) for key in self.commands[self.current])
+
+    # ---- the turn clock
+
+    def time_left(self):
+        """Seconds left in this turn, or None when there is no limit (or the game is over)."""
+        if self.turn_limit is None or self.winner is not None:
+            return None
+        return max(0.0, self.turn_limit - (self._clock() - self.turn_started))
+
+    def tick(self):
+        """Call regularly. Ends the turn when time has run out; returns True if it did."""
+        left = self.time_left()
+        if left is not None and left <= 0:
+            self._log("Time is up for player %d" % (self.current + 1))
+            self.end_turn()
+            return True
+        return False
+
+    def pause_for(self, seconds):
+        """Give the current turn `seconds` back (used while a menu is open so the clock does not run)."""
+        self.turn_started += seconds
+
+    def recent_log(self, turns=LOG_TURNS_SHOWN):
+        """The log lines of the last `turns` turns (each turn starts at its "Turn N: player P" line)."""
+        starts = [i for i, line in enumerate(self.log) if line.startswith("Turn ")]
+        first = starts[-turns] if len(starts) >= turns else 0
+        return self.log[first:]
 
     # ---- combat internals
 
@@ -601,11 +670,13 @@ class Game:
             "current": self.current, "turn_number": self.turn_number, "phase": self.phase,
             "selected": self.selected, "moves_left": self.moves_left, "has_attacked": self.has_attacked,
             "winner": self.winner, "next_uid": self.next_uid, "log": list(self.log),
+            "turn_limit": self.turn_limit,
+            "time_left": None if self.time_left() is None else round(self.time_left(), 3),
         }
 
     @classmethod
-    def from_dict(cls, d):
-        game = cls()
+    def from_dict(cls, d, clock=None):
+        game = cls(clock)
         game.units = {u["uid"]: Unit.from_dict(u) for u in d["units"]}
         game.obstacles = {tuple(c) for c in d["obstacles"]}
         game.commands = [list(c) for c in d["commands"]]
@@ -614,6 +685,10 @@ class Game:
         game.current, game.turn_number, game.phase = d["current"], d["turn_number"], d["phase"]
         game.selected, game.moves_left, game.has_attacked = d["selected"], d["moves_left"], d["has_attacked"]
         game.winner, game.next_uid, game.log = d["winner"], d["next_uid"], list(d["log"])
+        game.turn_limit = d.get("turn_limit")
+        left = d.get("time_left")
+        if game.turn_limit is not None and left is not None:     # clocks differ between machines: use time remaining
+            game.turn_started = game._clock() - (game.turn_limit - left)
         return game
 
     def apply_action(self, player, action):

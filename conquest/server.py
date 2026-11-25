@@ -4,6 +4,7 @@
 #
 #   python server.py                  # listens on 0.0.0.0:5555
 #   python server.py --port 6000
+#   python server.py --turn-limit 30      # seconds per turn: 10, 30, 60, 180 or inf
 #
 # Messages (see protocol.py for framing):
 #   server -> client  {"type": "welcome", "player": 0 or 1}
@@ -16,14 +17,17 @@ import socketserver
 import threading
 
 import protocol
-from engine import Game, IllegalAction, Loadout
+from engine import DEFAULT_TURN_LIMIT, Game, IllegalAction, Loadout
+
+TICK_SECONDS = 0.1                  # how often the server checks whether a turn has run out of time
 
 
 class Room:
     """One match: two player slots and, once both are ready, the Game."""
 
-    def __init__(self):
+    def __init__(self, turn_limit=DEFAULT_TURN_LIMIT):
         self.lock = threading.Lock()
+        self.turn_limit = turn_limit
         self.reset()
 
     def reset(self):
@@ -63,7 +67,7 @@ class Room:
                     return "bad loadout: %s" % exc
                 self.loadouts[slot] = loadout
                 if all(self.loadouts):
-                    self.game = Game.new(self.loadouts)
+                    self.game = Game.new(self.loadouts, turn_limit=self.turn_limit)
                     self._broadcast_state()
                 return None
             if kind == "action":
@@ -76,6 +80,12 @@ class Room:
                 self._broadcast_state()
                 return None
             return "unknown message type"
+
+    def tick(self):
+        """Called by the server's clock thread: end the turn if time has run out and tell both players."""
+        with self.lock:
+            if self.game is not None and self.game.tick():
+                self._broadcast_state()
 
     def _broadcast_state(self):
         payload = {"type": "state", "state": self.game.to_dict()}
@@ -114,9 +124,22 @@ class GameServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, host="0.0.0.0", port=5555):
+    def __init__(self, host="0.0.0.0", port=5555, turn_limit=DEFAULT_TURN_LIMIT):
         super().__init__((host, port), Handler)
-        self.room = Room()
+        self.room = Room(turn_limit)
+        self._stop_clock = threading.Event()
+
+    def serve_forever(self, poll_interval=0.5):
+        threading.Thread(target=self._run_clock, daemon=True).start()
+        super().serve_forever(poll_interval)
+
+    def _run_clock(self):
+        while not self._stop_clock.wait(TICK_SECONDS):
+            self.room.tick()
+
+    def shutdown(self):
+        self._stop_clock.set()
+        super().shutdown()
 
     @property
     def port(self):
@@ -127,7 +150,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Conquest game server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=5555)
+    parser.add_argument("--turn-limit", default=str(DEFAULT_TURN_LIMIT), choices=["10", "30", "60", "180", "inf"],
+                        help="seconds per turn, or inf for no limit")
     args = parser.parse_args()
-    with GameServer(args.host, args.port) as srv:
+    limit = None if args.turn_limit == "inf" else int(args.turn_limit)
+    with GameServer(args.host, args.port, limit) as srv:
         print("Waiting for players on %s:%d" % (args.host, srv.port))
         srv.serve_forever()
