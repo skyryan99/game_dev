@@ -20,6 +20,8 @@
 #     except Charge, so the movement phase waits while a Charge could still help. The rally phase never
 #     ends by itself while you still have a command you could use. When none is usable, the rally phase
 #     (and so the turn) ends on its own
+#   * "turn" means a round (it goes up once both players have moved); each player's go within it is a "turn" too
+#     in the log, which reads "Turn 3: player 2"
 #   * each turn has a time limit (a menu choice: 10s / 30s / 60s / 180s / unlimited); when it runs out the
 #     turn ends wherever it was
 import random
@@ -35,7 +37,7 @@ MAX_COMMANDS = 4
 STARTING_GOLD = 1000
 TURN_LIMITS = (10, 30, 60, 180, None)    # seconds per turn offered in the menu; None = no limit
 DEFAULT_TURN_LIMIT = 60
-LOG_TURNS_SHOWN = 3
+LOG_LINES_KEPT = 1000                    # the UI scrolls through all of these
 COMMANDS_COST_GOLD = False          # the wiki is ambiguous; the original code only charged for troops
 COMMAND_POINTS_PER_TURN = 25
 STARTING_COMMAND_POINTS = 0
@@ -271,7 +273,7 @@ class Game:
         self.cooldowns = [{}, {}]       # per player: command key -> turns remaining
         self.command_points = [STARTING_COMMAND_POINTS, STARTING_COMMAND_POINTS]
         self.current = 0
-        self.turn_number = 0            # counts each player's turn, so it is 1 on the very first turn
+        self.turn_number = 0            # a *round*: 1 for both players' first turns, 2 for their second, and so on
         self.phase = SELECTION
         self.selected = None            # uid of the unit acting this turn
         self.moves_left = 0
@@ -397,7 +399,8 @@ class Game:
 
     def _start_turn(self, player):
         self.current = player
-        self.turn_number += 1
+        if player == 0:                                 # player 1 always opens a round, so it only ticks up once
+            self.turn_number += 1                       # both players have had their go
         self.turn_started = self._clock()
         self.phase = SELECTION
         self.selected = None
@@ -616,12 +619,6 @@ class Game:
         """Give the current turn `seconds` back (used while a menu is open so the clock does not run)."""
         self.turn_started += seconds
 
-    def recent_log(self, turns=LOG_TURNS_SHOWN):
-        """The log lines of the last `turns` turns (each turn starts at its "Turn N: player P" line)."""
-        starts = [i for i, line in enumerate(self.log) if line.startswith("Turn ")]
-        first = starts[-turns] if len(starts) >= turns else 0
-        return self.log[first:]
-
     # ---- combat internals
 
     def _strike(self, striker, victim):
@@ -656,7 +653,7 @@ class Game:
 
     def _log(self, text):
         self.log.append(text)
-        del self.log[:-200]
+        del self.log[:-LOG_LINES_KEPT]
 
     # ---- serialisation (for the network and for tests)
 

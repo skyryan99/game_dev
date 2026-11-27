@@ -720,29 +720,39 @@ class TurnTimerTests(unittest.TestCase):
         other.advance(10); self.assertEqual(copy.time_left(), 25)
 
 
-class LogTests(unittest.TestCase):
-    def test_recent_log_covers_the_last_three_turns(self):
-        g = make_game([("scout", 17, 5)], [("scout", 0, 5)], p0_cmds=[KEEP_ALIVE], p1_cmds=[KEEP_ALIVE], points=500)
-        for _ in range(5):
-            g.end_turn()                                         # turns 2..6
-        shown = g.recent_log()
-        headers = [line for line in shown if line.startswith("Turn ")]
-        self.assertEqual(len(headers), 3)
-        self.assertTrue(headers[-1].startswith("Turn 6"))
-        self.assertTrue(headers[0].startswith("Turn 4"))
+class TurnNumberTests(unittest.TestCase):
+    """A "turn" is a round: it only goes up once both players have had their go."""
 
-    def test_recent_log_with_fewer_turns_shows_everything(self):
+    def test_both_players_share_a_turn_number(self):
         g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
-        self.assertEqual(g.recent_log(), g.log)
+        self.assertEqual((g.current, g.turn_number), (0, 1))
+        g.end_turn()
+        self.assertEqual((g.current, g.turn_number), (1, 1))      # player 2 is still in turn 1
+        g.end_turn()
+        self.assertEqual((g.current, g.turn_number), (0, 2))      # a new round starts with player 1
+        g.end_turn(); g.end_turn()
+        self.assertEqual((g.current, g.turn_number), (0, 3))
 
-    def test_events_stay_with_their_turn(self):
-        g = make_game([("foot_soldier", 10, 5), ("scout", 17, 0)], [("foot_soldier", 9, 5), ("scout", 0, 0)],
-                      p0_cmds=[KEEP_ALIVE], p1_cmds=[KEEP_ALIVE], points=500)
-        g.select_unit(uid_at(g, 10, 5)); g.attack(uid_at(g, 9, 5))
+    def test_log_headers_use_the_round_number(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
         for _ in range(3):
             g.end_turn()
-        shown = g.recent_log()
-        self.assertFalse(any("hits" in line for line in shown))   # the attack happened more than 3 turns ago
+        headers = [line for line in g.log if line.startswith("Turn ")]
+        self.assertEqual(headers, ["Turn 1: player 1", "Turn 1: player 2", "Turn 2: player 1", "Turn 2: player 2"])
+
+    def test_timeouts_and_automatic_turn_ends_follow_the_same_numbering(self):
+        clock = FakeClock(); g = timed_game(10, clock)
+        clock.advance(11); g.tick()                                # player 1 times out
+        self.assertEqual((g.current, g.turn_number), (1, 1))
+        clock.advance(11); g.tick()                                # player 2 times out
+        self.assertEqual((g.current, g.turn_number), (0, 2))
+
+    def test_the_whole_history_is_kept_for_scrolling(self):
+        g = make_game([("scout", 17, 5)], [("scout", 0, 5)])
+        for _ in range(300):
+            g.end_turn()
+        self.assertGreater(len(g.log), 200)
+        self.assertEqual(g.log[0], "Turn 1: player 1")
 
 
 class SerialisationTests(unittest.TestCase):

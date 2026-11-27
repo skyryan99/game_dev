@@ -157,25 +157,25 @@ def format_time(seconds):
     return "%d:%02d" % (whole // 60, whole % 60)
 
 
-def draw(screen, fonts, game, mouse_pos, hover_unit, armed, message, now=0.0):
+def draw(screen, fonts, game, mouse_pos, hover_unit, armed, message, now=0.0, log_view=None):
     x0 = panel_x(screen)
     left, width = x0 + 20, screen.get_width() - x0 - 40
     height = screen.get_height()
     pygame.draw.rect(screen, PANEL_BG, (x0, 0, screen.get_width() - x0, TOP_H))
     pygame.draw.rect(screen, DETAILS_BG, (x0, TOP_H, screen.get_width() - x0, height - TOP_H))
-    pygame.draw.line(screen, WHITE, (x0 - 2, 0), (x0 - 2, height), width=2)
+    pygame.draw.line(screen, WHITE, (x0 + 1, 0), (x0 + 1, height), width=2)       # inside the sidebar, so it travels with it
 
     # ---- turn info; the phase itself is shown by which button is glowing
     cur = game.current
     title = fonts[2].render("Player %d's turn" % (cur + 1), True, WHITE)
     screen.blit(title, (left, 12))
     remaining = game.time_left()
-    clock_text = "\u221e" if game.turn_limit is None else ("" if remaining is None else format_time(remaining))
-    if clock_text:
-        low = remaining is not None and remaining <= 10
-        clock = fonts[1].render(clock_text, True, ERROR if low else WHITE)
-        screen.blit(clock, (left + width - clock.get_width(), 12 + (title.get_height() - clock.get_height()) // 2 + 2))
+    if remaining is not None:                                  # unlimited turns show no clock at all
+        clock = fonts[2].render(format_time(remaining), True, ERROR if remaining <= 10 else WHITE)
+        screen.blit(clock, (left + width - clock.get_width(), 12))
     screen.blit(fonts[1].render("Command points: %d" % game.command_points[cur], True, COMMAND_POINTS), (left, 55))
+    turn = fonts[1].render("Turn %d" % game.turn_number, True, LABEL)
+    screen.blit(turn, (left + width - turn.get_width(), 55))
     if game.phase == engine.MOVEMENT:
         screen.blit(fonts[1].render("Moves left: %d" % game.moves_left, True, WHITE), (left, 83))
 
@@ -200,7 +200,7 @@ def draw(screen, fonts, game, mouse_pos, hover_unit, armed, message, now=0.0):
     hover_button = next((b for b in buttons if b.kind == "command" and b.rect.collidepoint(mouse_pos)), None)
     top_of_log = log_top(screen)
     draw_details(screen, fonts, game, x0, TOP_H, top_of_log - DETAILS_GAP, hover_button, hover_unit)
-    draw_log(screen, fonts, game, x0, top_of_log, screen.get_width() - x0)
+    draw_log(screen, fonts, game, x0, top_of_log, screen.get_width() - x0, log_view)
 
 
 def fit_text(font, text, max_width):
@@ -212,19 +212,101 @@ def fit_text(font, text, max_width):
     return text + "..."
 
 
-def draw_log(screen, fonts, game, x0, top, panel_width):
-    """A fixed-size box showing the last few turns. Older lines scroll out the top when it is full."""
+LOG_CAPACITY = (LOG_H - 36) // LOG_LINE          # lines visible at once
+BAR_W = 8
+
+
+def log_box(screen):
+    x0 = panel_x(screen)
+    return pygame.Rect(x0 + 12, log_top(screen), screen.get_width() - x0 - 24, LOG_H)
+
+
+class LogView:
+    """Scroll state of the turn log. `offset` is how many lines up from the newest the view is; 0 follows the
+    newest lines. While scrolled up, new lines arriving do not push what you are reading out of view."""
+
+    def __init__(self):
+        self.offset = 0
+        self.last_total = 0
+        self.dragging = False
+        self._grab = 0
+
+    def max_offset(self, total):
+        return max(0, total - LOG_CAPACITY)
+
+    def sync(self, total):
+        if self.offset > 0 and total > self.last_total:
+            self.offset += total - self.last_total
+        self.last_total = total
+        self.offset = max(0, min(self.offset, self.max_offset(total)))
+
+    def scroll(self, lines, total):
+        """Positive scrolls toward older lines."""
+        self.offset = max(0, min(self.offset + lines, self.max_offset(total)))
+
+    # the scroll bar: a thin track along the right inside edge of the box, with a draggable thumb
+    def track(self, box):
+        return pygame.Rect(box.right - BAR_W - 6, box.y + 32, BAR_W, LOG_H - 40)
+
+    def thumb(self, box, total):
+        track = self.track(box)
+        if total <= LOG_CAPACITY:
+            return None
+        height = max(18, int(track.height * LOG_CAPACITY / total))
+        travel = track.height - height
+        top = track.y + int(travel * (1 - self.offset / self.max_offset(total)))
+        return pygame.Rect(track.x, top, track.width, height)
+
+    def press(self, pos, box, total):
+        """Handle a left click. Returns True if it landed on the scroll bar."""
+        thumb = self.thumb(box, total)
+        if thumb is None:
+            return False
+        track = self.track(box)
+        if thumb.inflate(8, 0).collidepoint(pos):
+            self.dragging, self._grab = True, pos[1] - thumb.y
+            return True
+        if track.inflate(8, 0).collidepoint(pos):                     # click the track: jump a page that way
+            self.scroll(LOG_CAPACITY if pos[1] < thumb.y else -LOG_CAPACITY, total)
+            return True
+        return False
+
+    def drag(self, pos, box, total):
+        thumb = self.thumb(box, total)
+        if not self.dragging or thumb is None:
+            return
+        track = self.track(box)
+        travel = track.height - thumb.height
+        top = max(0, min(travel, pos[1] - self._grab - track.y))
+        self.offset = round((1 - top / travel) * self.max_offset(total)) if travel else 0
+
+    def release(self):
+        self.dragging = False
+
+
+def draw_log(screen, fonts, game, x0, top, panel_width, view=None):
+    """A fixed-size box of the whole history; the scroll bar appears once it no longer fits."""
     box = pygame.Rect(x0 + 12, top, panel_width - 24, LOG_H)
+    view = view or LogView()
+    total = len(game.log)
+    view.sync(total)
     pygame.draw.rect(screen, LOG_BG, box)
     pygame.draw.rect(screen, HOVER, box, width=1)
     screen.blit(fonts[1].render("Turn log", True, LOG_TITLE), (box.x + 10, box.y + 4))
-    room = (LOG_H - 36) // LOG_LINE
-    lines = game.recent_log()[-room:]
+    last = total - view.offset
+    first = max(0, last - LOG_CAPACITY)
     y = box.y + 32
-    for line in lines:
+    text_w = box.width - 20 - (BAR_W + 8 if total > LOG_CAPACITY else 0)
+    for line in game.log[first:last]:
         color = LOG_TURN if line.startswith("Turn ") else WHITE
-        screen.blit(fonts[0].render(fit_text(fonts[0], line, box.width - 20), True, color), (box.x + 10, y))
+        screen.blit(fonts[0].render(fit_text(fonts[0], line, text_w), True, color), (box.x + 10, y))
         y += LOG_LINE
+    thumb = view.thumb(box, total)
+    if thumb is not None:
+        pygame.draw.rect(screen, (60, 44, 18), view.track(box))
+        pygame.draw.rect(screen, WHITE if view.dragging else HOVER, thumb)
+        if view.offset:                                               # a hint that newer lines are below
+            screen.blit(fonts[0].render("scrolled up", True, LOG_TITLE), (box.right - 90 - BAR_W - 14, box.y + 8))
 
 
 def wrap_text(font, text, max_width):

@@ -49,7 +49,12 @@ the same call the server makes for each client message, so illegal moves are rej
   themselves when nothing is left to do.
 * Each turn has a time limit, picked in the loadout menu (10s / 30s / 60s / 180s / unlimited). The countdown is at
   the top right of the side panel and the turn ends by itself when it reaches zero. It pauses while Esc's menu is open.
-* The panel's bottom box is a fixed-size log of the last three turns.
+* The bottom box of the side panel is a fixed-size log of everything that has happened. Scroll it with the mouse wheel
+  over the box or drag its little scroll bar; while you are scrolled up it keeps your place as new lines arrive.
+* Every time a new player's turn starts, a quick coloured flash sweeps across the screen. A turn limit of unlimited
+  (the infinity option) hides the clock entirely.
+* The side panel is always flush with the right edge of the window. In windows that are not 16:9 the extra space
+  becomes bars in the game's blue (in the menus, the menus' brown).
 * Side panel: End Phase, End Turn, Resign, and your commands (click a command, then click its target).
 * Right click cancels a pending command. Mouse wheel zooms, middle-drag pans.
 * **Esc** cancels a pending command in a game; with nothing to cancel (and on every other screen) it opens the menu:
@@ -69,6 +74,9 @@ The wiki does not say, so these are assumptions (all in one place at the top of 
 * Bombard is not "damage", so Shield Wall does not reduce it.
 * Commands cost no squad gold in the loadout (only troops do); they cost command points in the game.
   The menus label these "Gold cost" and "Command point cost".
+* A "turn" is a round: it goes up only once both players have had their go (Turn 1 is player 1 then player 2).
+* Time spent stalled (dragging the window by its title bar, switching display mode, drawing the board) is never
+  charged to the turn clock, and the clock is paused while Esc's menu is open.
 * Obstacles live in rows 5-14 (0-indexed) so each army has five clear rows.
 * A phase ends automatically when it has nothing left in it: no steps left (or nowhere to step), no enemy in
   range, or no troop able to act. The movement phase waits while a Charge could still give a troop more room to

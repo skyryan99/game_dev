@@ -93,11 +93,78 @@ def draw_winner(screen, fonts, winner):
     screen.blit(sub, (cx - sub.get_width() // 2, cy + 20))
 
 
-def present(fake_screen, screen):
-    """Scale the fixed-size drawing surface to fit the real window, centred, keeping its shape.
-    Windows that are not 16:9 get black bars rather than a stretched board."""
-    scale, ox, oy = screenconfig.fit(screen.get_size(), fake_screen.get_size())
-    size = (max(1, int(fake_screen.get_width() * scale)), max(1, int(fake_screen.get_height() * scale)))
-    screen.fill((0, 0, 0))
-    screen.blit(pygame.transform.scale(fake_screen, size), (int(ox), int(oy)))
+FLASH_SECONDS = 0.75
+_flash_cache = {}
+
+
+def _cached(key, make):
+    if key not in _flash_cache:
+        _flash_cache[key] = make()
+    return _flash_cache[key]
+
+
+def draw_turn_flash(screen, fonts, player, turn_number, progress):
+    """A quick flash across the screen when a new player's turn begins. `progress` runs 0 -> 1 over
+    FLASH_SECONDS: a colour wash that fades, a bright band that sweeps left to right, and a banner."""
+    color = PLAYER_COLORS[player]
+    w, h = screen.get_size()
+
+    wash = _cached(("wash", color, w, h), lambda: _filled(w, h, color))       # fading tint over everything
+    wash.set_alpha(int(75 * (1 - progress) ** 2))
+    screen.blit(wash, (0, 0))
+
+    sweep = min(1.0, progress / 0.65)                                         # the band crosses the screen first
+    strips, strip_w = 28, 22
+    centre = -strips * strip_w / 2 + (w + strips * strip_w) * sweep
+    for i in range(strips):
+        x = int(centre + (i - strips / 2) * strip_w)
+        if x + strip_w < 0 or x > w:
+            continue
+        falloff = 1.0 - abs(i + 0.5 - strips / 2) / (strips / 2)
+        strip = _cached(("strip", color, h, i), lambda f=falloff: _strip(strip_w, h, color, int(190 * f)))
+        screen.blit(strip, (x, 0))
+
+    fade = max(0.0, min(1.0, (1 - progress) / 0.6))                           # banner stays, then fades out
+    banner = _cached(("banner", player), lambda: fonts[4].render("Player %d's turn" % (player + 1), True,
+                                                                   tuple(min(255, c + 90) for c in color)))
+    sub = _cached(("sub", turn_number), lambda: fonts[2].render("Turn %d" % turn_number, True, (255, 255, 255)))
+    cx, cy = w // 2, h // 2
+    for surf, y in ((banner, cy - banner.get_height()), (sub, cy + 8)):
+        surf.set_alpha(int(255 * fade))
+        screen.blit(surf, (cx - surf.get_width() // 2, y))
+
+
+def _filled(w, h, color):
+    surface = pygame.Surface((w, h))
+    surface.fill(color)
+    return surface
+
+
+def _strip(w, h, color, alpha):
+    surface = pygame.Surface((w, h), pygame.SRCALPHA)
+    surface.fill(tuple(min(255, c + 60) for c in color) + (alpha,))
+    return surface
+
+
+def present(fake_screen, screen, bar_color=(0, 0, 0), split_x=None):
+    """Scale the fixed-size drawing surface to fit the real window, keeping its shape; any leftover
+    window space is filled with `bar_color`.
+
+    split_x=None: the canvas is centred (menus).
+    split_x=<canvas x>: in-game layout. The sidebar (everything right of split_x) is pinned to the right
+    edge of the window and the board area is centred in the space that is left of it."""
+    fw, fh = fake_screen.get_size()
+    screen.fill(bar_color)
+    if split_x is None:
+        scale, ox, oy = screenconfig.fit(screen.get_size(), (fw, fh))
+        size = (max(1, int(fw * scale)), max(1, int(fh * scale)))
+        screen.blit(pygame.transform.scale(fake_screen, size), (int(ox), int(oy)))
+    else:
+        scale, board_ox, _, oy = screenconfig.fit_split(screen.get_size(), (fw, fh), split_x)
+        size = (max(1, int(fw * scale)), max(1, int(fh * scale)))
+        scaled = pygame.transform.scale(fake_screen, size)
+        split_px = int(split_x * scale)
+        side_w = size[0] - split_px
+        screen.blit(scaled, (int(board_ox), int(oy)), pygame.Rect(0, 0, split_px, size[1]))
+        screen.blit(scaled, (screen.get_width() - side_w, int(oy)), pygame.Rect(split_px, 0, side_w, size[1]))
     pygame.display.update()

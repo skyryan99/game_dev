@@ -60,6 +60,28 @@ def window_to_base(pos, window, base=BASE_SIZE):
     return (pos[0] - ox) / scale, (pos[1] - oy) / scale
 
 
+def fit_split(window, base, split_x):
+    """Like fit(), but for the in-game screen: the part of the canvas right of `split_x` (the sidebar) is
+    pinned to the window's right edge, and the part left of it (the board) is centred in the space that
+    is left. Returns (scale, board_offset_x, sidebar_offset_x, offset_y)."""
+    scale = max(min(window[0] / base[0], window[1] / base[1]), 1e-6)
+    sidebar_w = (base[0] - split_x) * scale
+    board_w = split_x * scale
+    room = window[0] - sidebar_w
+    return scale, (room - board_w) / 2, window[0] - sidebar_w, (window[1] - base[1] * scale) / 2
+
+
+def window_to_base_split(pos, window, base, split_x):
+    """Mouse position in the window -> (x, y, region) in canvas coordinates for the in-game screen.
+    region is "side" over the sidebar, "main" over the board area, and "bar" over the empty bars."""
+    scale, board_ox, side_ox, oy = fit_split(window, base, split_x)
+    y = (pos[1] - oy) / scale
+    if pos[0] >= side_ox:
+        return split_x + (pos[0] - side_ox) / scale, y, "side"
+    x = (pos[0] - board_ox) / scale
+    return x, y, ("main" if 0 <= x < split_x else "bar")
+
+
 def load(path):
     """Read settings from JSON; any missing or corrupt file just gives the defaults."""
     settings = Settings()

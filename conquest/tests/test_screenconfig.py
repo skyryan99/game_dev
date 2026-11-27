@@ -41,6 +41,52 @@ class FitTests(unittest.TestCase):
         sc.window_to_base((0, 0), (0, 0))
 
 
+class SplitTests(unittest.TestCase):
+    """In game the sidebar hugs the right edge of the window and the board is centred in what is left."""
+    SPLIT = 1536
+
+    def test_native_size_changes_nothing(self):
+        self.assertEqual(sc.fit_split((1920, 1080), sc.BASE_SIZE, self.SPLIT), (1.0, 0.0, 1536.0, 0.0))
+
+    def test_wider_window_pins_the_sidebar_right_and_centres_the_board(self):
+        scale, board_ox, side_ox, oy = sc.fit_split((2560, 1080), sc.BASE_SIZE, self.SPLIT)
+        self.assertEqual((scale, oy), (1.0, 0))
+        self.assertEqual(side_ox, 2560 - 384)                  # sidebar flush with the right edge
+        self.assertEqual(board_ox, (2176 - 1536) / 2)          # board centred in the 2176px left of it
+
+    def test_taller_window_keeps_the_sidebar_at_the_right_edge_too(self):
+        scale, board_ox, side_ox, oy = sc.fit_split((1920, 1200), sc.BASE_SIZE, self.SPLIT)
+        self.assertEqual((board_ox, side_ox, oy), (0, 1536, 60))
+
+    def test_mouse_regions(self):
+        window = (2560, 1080)
+        self.assertEqual(sc.window_to_base_split((2559, 100), window, sc.BASE_SIZE, self.SPLIT)[2], "side")
+        self.assertEqual(sc.window_to_base_split((2560 - 384, 100), window, sc.BASE_SIZE, self.SPLIT)[2], "side")
+        self.assertEqual(sc.window_to_base_split((700, 100), window, sc.BASE_SIZE, self.SPLIT)[2], "main")
+        self.assertEqual(sc.window_to_base_split((10, 100), window, sc.BASE_SIZE, self.SPLIT)[2], "bar")        # left bar
+        self.assertEqual(sc.window_to_base_split((2000, 100), window, sc.BASE_SIZE, self.SPLIT)[2], "bar")      # between board and sidebar
+
+    def test_mouse_mapping_round_trips_on_both_sides(self):
+        for window in [(2560, 1080), (1920, 1200), (1280, 720), (3000, 1500), (1000, 1000)]:
+            scale, board_ox, side_ox, oy = sc.fit_split(window, sc.BASE_SIZE, self.SPLIT)
+            for base_pos in [(0, 0), (700, 400), (1535, 1079)]:                   # board side
+                win = (base_pos[0] * scale + board_ox, base_pos[1] * scale + oy)
+                x, y, region = sc.window_to_base_split(win, window, sc.BASE_SIZE, self.SPLIT)
+                self.assertAlmostEqual(x, base_pos[0]); self.assertAlmostEqual(y, base_pos[1])
+                self.assertEqual(region, "main", (window, base_pos))
+            for base_pos in [(1536, 0), (1700, 500), (1919, 1079)]:               # sidebar side
+                win = (side_ox + (base_pos[0] - self.SPLIT) * scale, base_pos[1] * scale + oy)
+                x, y, region = sc.window_to_base_split(win, window, sc.BASE_SIZE, self.SPLIT)
+                self.assertAlmostEqual(x, base_pos[0]); self.assertAlmostEqual(y, base_pos[1])
+                self.assertEqual(region, "side", (window, base_pos))
+
+    def test_the_two_halves_never_overlap_on_screen(self):
+        for window in [(1280, 720), (2560, 1080), (1920, 1200), (1000, 1000), (640, 360)]:
+            scale, board_ox, side_ox, _ = sc.fit_split(window, sc.BASE_SIZE, self.SPLIT)
+            self.assertGreaterEqual(board_ox, -1e-9)
+            self.assertLessEqual(board_ox + self.SPLIT * scale, side_ox + 1e-9)
+
+
 class ResolutionTests(unittest.TestCase):
     def test_only_presets_that_fit_the_desktop(self):
         self.assertEqual(sc.available_resolutions((1920, 1080)), [(1280, 720), (1366, 768), (1600, 900), (1920, 1080)])

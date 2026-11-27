@@ -6,7 +6,7 @@
 #
 # Everything is drawn onto a fixed 1920x1080 surface ("fake screen") which is then scaled to fit the
 # real window (letterboxed if it is not 16:9), so every coordinate below is in 1920x1080 space.
-# Mouse positions are converted with App.to_fake(). Window size and fullscreen live in
+# Mouse positions are converted with App.set_mouse(). Window size and fullscreen live in
 # screenconfig.Settings and are applied in App.apply_display().
 import ctypes
 import random
@@ -28,6 +28,8 @@ DEFAULT_SIZE = screenconfig.BASE_SIZE
 SETTINGS_PATH = assets.path("settings.json")
 SCALES = [1, 2, 4]                  # zoom levels
 FPS = 60
+STALL_SECONDS = 0.5                # a frame longer than this was a stall (window drag, mode switch, ...)
+LOG_WHEEL_LINES = 3                 # lines per mouse-wheel notch over the turn log
 
 
 def desktop_size():
@@ -70,6 +72,10 @@ class App:
 
         self.state = "START"
         self.mouse = (0, 0)                 # always in fake-screen coordinates
+        self.region = "main"                # where the mouse is in game: "main" (board), "side" (sidebar) or "bar"
+        self.log_view = hud.LogView()
+        self.turn_key = None                # (turn, player) last seen, to notice a new turn and flash
+        self.flash_started = None
         self.start_rect = menus.start_button_rect(self.fonts, DEFAULT_SIZE[0])
         self.menu = None
         self.game = None
@@ -83,8 +89,19 @@ class App:
 
     # ---- helpers
 
-    def to_fake(self, pos):
-        return screenconfig.window_to_base(pos, self.screen.get_size(), DEFAULT_SIZE)
+    def set_mouse(self, pos):
+        """Convert a window position to canvas coordinates (and note which part of the screen it is over)."""
+        if self.state == "GAME":
+            x, y, self.region = screenconfig.window_to_base_split(
+                pos, self.screen.get_size(), DEFAULT_SIZE, hud.panel_x(self.fake))
+        else:
+            x, y = screenconfig.window_to_base(pos, self.screen.get_size(), DEFAULT_SIZE)
+            self.region = "main"
+        self.mouse = (x, y)
+
+    def bar_color(self):
+        """What fills the window around the canvas: the game's blue in game, the menus' brown elsewhere."""
+        return render.BACKGROUND if self.state == "GAME" else menus.BACK_COLOR
 
     def apply_display(self):
         """(Re)create the window from self.settings. Fullscreen always uses the desktop resolution."""
@@ -129,7 +146,7 @@ class App:
                 self.controller.cancel()
 
     def hover_unit(self):
-        if self.state != "GAME" or self.menu_open or self.mouse[0] >= hud.panel_x(self.fake):
+        if self.state != "GAME" or self.menu_open or self.region != "main":
             return None
         tile = gameboard.tile_at(self.mouse, self.anchor, self.cell, SCALES[self.scale_idx])
         return self.game.unit_at(*tile) if tile else None
@@ -140,9 +157,16 @@ class App:
     def start_game(self):
         # Hot-seat for now: player 2 gets a copy of player 1's squad until online play is hooked up.
         loadouts = [self.menu.loadout, engine.Loadout.from_dict(self.menu.loadout.to_dict())]
-        self.game = engine.Game.new(loadouts, rng=random.Random(), turn_limit=self.menu.turn_limit)
+        rng = random.Random()
+        obstacles = engine.generate_obstacles(rng)
+        # Draw the (slow-ish) textured boards *before* the game exists, so nobody's first turn clock is running
+        # while we are busy.
+        self.boards = [gameboard.create_board(self.cell * s, obstacles) for s in SCALES]
+        self.game = engine.Game.new(loadouts, obstacles=obstacles, rng=rng, turn_limit=self.menu.turn_limit)
         self.controller = actions.Controller(self.game)
-        self.boards = [gameboard.create_board(self.cell * s, self.game.obstacles) for s in SCALES]
+        self.log_view = hud.LogView()
+        self.turn_key = None
+        self.flash_started = None
         self.scale_idx = 0
         self.anchor = (0, 0)
         self.state = "GAME"
@@ -161,19 +185,26 @@ class App:
             if not self.settings.fullscreen:
                 self.settings.width, self.settings.height = self.screen.get_size()
         elif event.type == pygame.MOUSEMOTION:
-            self.mouse = self.to_fake(event.pos)
+            self.set_mouse(event.pos)
+            if self.log_view.dragging:
+                self.log_view.drag(self.mouse, hud.log_box(self.fake), len(self.game.log))
             if self.dragging:
                 (mx0, my0), (ax0, ay0) = self.drag_origin
                 self.anchor = (ax0 + self.mouse[0] - mx0, ay0 + self.mouse[1] - my0)
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            self.mouse = self.to_fake(event.pos)
+            self.set_mouse(event.pos)
             self.on_mouse_down(event.button)
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 2:
                 self.dragging = False
+            elif event.button == 1:
+                self.log_view.release()
         elif event.type == pygame.MOUSEWHEEL:
             if self.state == "GAME" and not self.menu_open:
-                self.zoom(event.y)
+                if self.region == "main":
+                    self.zoom(event.y)
+                elif self.region == "side" and hud.log_box(self.fake).collidepoint(self.mouse):
+                    self.log_view.scroll(event.y * LOG_WHEEL_LINES, len(self.game.log))
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.on_escape()
@@ -199,15 +230,18 @@ class App:
             if self.game.winner is not None:
                 if button == 1:
                     self.state = "START"
+            elif self.region == "bar":
+                return                                      # the empty bars around the game do nothing
             elif button == 2:
-                if self.scale_idx > 0:
+                if self.scale_idx > 0 and self.region == "main":
                     self.dragging = True
                     self.drag_origin = (self.mouse, self.anchor)
             elif button == 3:
                 self.controller.cancel()
             elif button == 1:
-                if self.mouse[0] >= hud.panel_x(self.fake):
-                    self.controller.click_button(hud.button_at(self.fake, self.game, self.mouse))
+                if self.region == "side":
+                    if not self.log_view.press(self.mouse, hud.log_box(self.fake), len(self.game.log)):
+                        self.controller.click_button(hud.button_at(self.fake, self.game, self.mouse))
                 else:
                     tile = gameboard.tile_at(self.mouse, self.anchor, self.cell, SCALES[self.scale_idx])
                     self.controller.click_tile(tile)
@@ -240,19 +274,30 @@ class App:
             render.draw_highlights(self.fake, self.game, hover, self.cell, self.anchor, scale)
             render.draw_units(self.fake, self.game, self.cell, self.anchor, scale)
             hud.draw(self.fake, self.fonts, self.game, self.mouse, hover, self.controller.armed,
-                     self.controller.message, pygame.time.get_ticks() / 1000.0)
+                     self.controller.message, pygame.time.get_ticks() / 1000.0, self.log_view)
             if self.game.winner is not None:
                 render.draw_winner(self.fake, self.fonts, self.game.winner)
+            elif self.flash_started is not None:
+                progress = (pygame.time.get_ticks() / 1000.0 - self.flash_started) / render.FLASH_SECONDS
+                if progress < 1.0:
+                    render.draw_turn_flash(self.fake, self.fonts, self.game.current, self.game.turn_number, progress)
+                else:
+                    self.flash_started = None
         if self.menu_open:
             can_prev, can_next = self.menu_state()
             self.game_menu.draw(self.fake, self.mouse, self.settings, can_prev, can_next)
-        render.present(self.fake, self.screen)
+        render.present(self.fake, self.screen, self.bar_color(),
+                       hud.panel_x(self.fake) if self.state == "GAME" else None)
 
     def update(self, dt):
         """Advance the turn clock by one frame. It stands still while the menu is open."""
         if self.state != "GAME" or self.game.winner is not None:
             return
-        if self.menu_open:
+        key = (self.game.turn_number, self.game.current)
+        if key != self.turn_key:                    # a new player's turn: flash across the screen
+            self.turn_key = key
+            self.flash_started = pygame.time.get_ticks() / 1000.0
+        if self.menu_open or dt > STALL_SECONDS:   # a menu, or a stalled frame (dragging the window...): not the player's fault
             self.game.pause_for(dt)
         elif self.game.tick():                  # time ran out: the turn changed hands underneath the player
             self.controller.cancel()
